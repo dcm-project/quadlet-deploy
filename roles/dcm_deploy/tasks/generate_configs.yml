@@ -1,0 +1,50 @@
+---
+- name: Template DCM environment file
+  ansible.builtin.template:
+    src: dcm.env.j2
+    dest: "{{ dcm_quadlet_dir }}/dcm.env"
+    mode: "0600"
+
+- name: Clone api-gateway repo, copy config files, and clean up
+  block:
+    - name: Clone api-gateway repository
+      ansible.builtin.git:
+        repo: "{{ dcm_api_gateway_repo }}"
+        version: "{{ dcm_api_gateway_version }}"
+        dest: "{{ dcm_api_gateway_clone_dir }}"
+        force: true
+
+    - name: Copy Traefik static configuration
+      ansible.builtin.copy:
+        src: "{{ dcm_api_gateway_clone_dir }}/config/traefik.yml"
+        dest: "{{ dcm_config_dir }}/traefik/traefik.yml"
+        mode: "0644"
+        remote_src: true
+
+    - name: Copy Traefik dynamic routes
+      ansible.builtin.copy:
+        src: "{{ dcm_api_gateway_clone_dir }}/config/dynamic/routes.yml"
+        dest: "{{ dcm_config_dir }}/traefik/dynamic/routes.yml"
+        mode: "0644"
+        remote_src: true
+
+    - name: Copy PostgreSQL init SQL
+      ansible.builtin.copy:
+        src: "{{ dcm_api_gateway_clone_dir }}/hack/postgres-init/01-create-databases.sql"
+        dest: "{{ dcm_config_dir }}/postgres-init/01-create-databases.sql"
+        mode: "0644"
+        remote_src: true
+
+    - name: Template ACM cluster provider environment file
+      ansible.builtin.template:
+        src: dcm-acm-cluster.env.j2
+        dest: "{{ dcm_quadlet_dir }}/dcm-acm-cluster.env"
+        mode: "0600"
+      no_log: true
+      when: dcm_provider_acm_cluster
+
+  always:
+    - name: Remove cloned api-gateway repository
+      ansible.builtin.file:
+        path: "{{ dcm_api_gateway_clone_dir }}"
+        state: absent

@@ -1,0 +1,72 @@
+---
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  lint:
+    name: Lint
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install dependencies
+        run: pip install yamllint ansible-core ansible-lint
+
+      - name: Install required collections
+        run: ansible-galaxy collection install ansible.posix
+
+      - name: YAML lint
+        run: yamllint -s .
+
+      - name: Ansible lint
+        run: ansible-lint
+
+  syntax-check:
+    name: Syntax check
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install dependencies
+        run: pip install ansible-core
+
+      - name: Install required collections
+        run: ansible-galaxy collection install ansible.posix
+
+      - name: Check main playbook syntax
+        run: ansible-playbook main.yml --syntax-check
+
+      - name: Check alignment playbook syntax
+        run: ansible-playbook verify_compose_alignment.yml --syntax-check
+
+  alignment:
+    name: Compose-to-quadlet alignment
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install dependencies
+        run: pip install ansible-core
+
+      - name: Verify quadlet templates match upstream compose
+        run: ansible-playbook verify_compose_alignment.yml

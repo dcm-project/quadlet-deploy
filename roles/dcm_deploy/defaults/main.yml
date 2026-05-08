@@ -1,0 +1,87 @@
+---
+# Container images — infrastructure
+dcm_postgres_image: "docker.io/library/postgres"
+dcm_postgres_image_tag: "16-alpine"
+dcm_nats_image: "docker.io/library/nats"
+dcm_nats_image_tag: "2-alpine"
+dcm_traefik_image: "docker.io/traefik"
+dcm_traefik_image_tag: "v3.4"
+
+# Container images — DCM managers
+dcm_image_registry: "quay.io/dcm-project"
+dcm_service_provider_manager_version: "main"
+dcm_catalog_manager_version: "main"
+dcm_policy_manager_version: "main"
+dcm_placement_manager_version: "main"
+
+# Container images — DCM UI
+dcm_ui_version: "main"
+
+# Container images — optional providers
+dcm_kubevirt_service_provider_version: "main"
+dcm_k8s_container_service_provider_version: "main"
+dcm_acm_cluster_service_provider_version: "main"
+dcm_three_tier_demo_service_provider_version: "main"
+
+# Database credentials
+dcm_db_user: "admin"
+dcm_db_password: "adminpass"
+# Override to suppress the default-password safety check (not for production use)
+dcm_allow_default_password: false
+
+# Published ports
+dcm_gateway_port: 9080
+dcm_ui_port: 7007
+# Set to true to publish postgres to the host — off by default to limit attack surface
+dcm_publish_postgres_port: false
+dcm_postgres_port: 5432
+dcm_nats_port: 4222
+dcm_nats_monitor_port: 8222
+
+# Paths on target host
+dcm_config_dir: "/srv/containers/dcm/config"
+dcm_quadlet_dir: "/etc/containers/systemd"
+
+# api-gateway repo (cloned at deploy time for config files)
+dcm_api_gateway_repo: "https://github.com/dcm-project/api-gateway.git"
+dcm_api_gateway_version: "main"
+dcm_api_gateway_clone_dir: "/tmp/dcm-api-gateway"
+
+# Feature toggles for optional service providers
+dcm_provider_kubevirt: false
+dcm_provider_k8s_container: false
+dcm_provider_acm_cluster: false
+dcm_provider_three_tier_demo: false
+
+# KubeVirt service provider config
+dcm_kubevirt_provider_name: "kubevirt-service-provider"
+dcm_kubevirt_namespace: "default"
+dcm_kubevirt_kubeconfig: ""
+
+# K8s container service provider config
+dcm_k8s_container_sp_name: "k8s-container-provider"
+dcm_k8s_container_sp_namespace: "default"
+dcm_k8s_container_sp_external_svc_type: "NodePort"
+dcm_k8s_container_sp_kubeconfig: ""
+
+# ACM cluster service provider config — all fields required when dcm_provider_acm_cluster is true
+dcm_acm_cluster_sp_name: "acm-cluster-sp"
+dcm_acm_cluster_sp_namespace: "default"
+# Cluster base domain (e.g., "example.com")
+dcm_acm_cluster_sp_base_domain: ""
+# OpenShift pull secret — full .dockerconfigjson content (JSON string)
+dcm_acm_cluster_sp_pull_secret: ""
+# ACM InfraEnv name for bare-metal discovery
+dcm_acm_cluster_sp_default_infra_env: ""
+# Namespace where ACM agents are registered
+dcm_acm_cluster_sp_agent_namespace: ""
+# Path to kubeconfig on the target host
+dcm_acm_cluster_sp_kubeconfig: ""
+
+# Three-tier demo service provider config — requires dcm_provider_k8s_container to also be enabled
+dcm_three_tier_demo_sp_name: "three-tier-provider"
+dcm_three_tier_demo_sp_namespace: "default"
+# Reuses dcm_k8s_container_sp_kubeconfig — set that var when enabling this provider
+
+# Firewall
+dcm_firewall_zone: "public"

@@ -1,0 +1,46 @@
+---
+- name: Assert database password has been changed from default
+  ansible.builtin.assert:
+    that: dcm_allow_default_password or dcm_db_password != 'adminpass'
+    fail_msg: >-
+      dcm_db_password is still the default 'adminpass'. Set a strong password or
+      set dcm_allow_default_password: true to suppress this check.
+
+- name: Install required packages
+  ansible.builtin.dnf:
+    name:
+      - "@container-management"
+      - firewalld
+      - git
+    state: present
+
+- name: Enable and start firewalld
+  ansible.builtin.systemd_service:
+    name: firewalld
+    state: started
+    enabled: true
+
+- name: Open DCM gateway port in firewall
+  ansible.posix.firewalld:
+    port: "{{ dcm_gateway_port }}/tcp"
+    zone: "{{ dcm_firewall_zone }}"
+    permanent: true
+    state: enabled
+  notify: Reload firewalld
+
+- name: Open DCM UI port in firewall
+  ansible.posix.firewalld:
+    port: "{{ dcm_ui_port }}/tcp"
+    zone: "{{ dcm_firewall_zone }}"
+    permanent: true
+    state: enabled
+  notify: Reload firewalld
+
+- name: Create configuration directories
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: directory
+    mode: "0755"
+  loop:
+    - "{{ dcm_config_dir }}/traefik/dynamic"
+    - "{{ dcm_config_dir }}/postgres-init"

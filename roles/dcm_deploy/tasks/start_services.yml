@@ -1,0 +1,76 @@
+---
+- name: Start NATS service
+  ansible.builtin.systemd_service:
+    name: dcm-nats.service
+    state: started
+    enabled: true
+
+- name: Wait for NATS to be ready
+  ansible.builtin.wait_for:
+    host: localhost
+    port: "{{ dcm_nats_port }}"
+    timeout: 60
+
+- name: Start DCM manager services
+  ansible.builtin.systemd_service:
+    name: "{{ item }}"
+    state: started
+    enabled: true
+  loop:
+    - dcm-service-provider-manager.service
+    - dcm-catalog-manager.service
+    - dcm-policy-manager.service
+    - dcm-placement-manager.service
+
+- name: Wait for manager containers to be healthy
+  ansible.builtin.command: podman inspect --format {% raw %}'{{.State.Health.Status}}'{% endraw %} {{ item }}
+  register: manager_health
+  until: manager_health.stdout | trim == "healthy"
+  retries: 30
+  delay: 2
+  changed_when: false
+  loop:
+    - service-provider-manager
+    - catalog-manager
+    - policy-manager
+    - placement-manager
+
+- name: Start DCM gateway service
+  ansible.builtin.systemd_service:
+    name: dcm-gateway.service
+    state: started
+    enabled: true
+
+- name: Start DCM UI service
+  ansible.builtin.systemd_service:
+    name: dcm-ui.service
+    state: started
+    enabled: true
+
+- name: Start KubeVirt service provider
+  ansible.builtin.systemd_service:
+    name: dcm-kubevirt-service-provider.service
+    state: started
+    enabled: true
+  when: dcm_provider_kubevirt
+
+- name: Start K8s container service provider
+  ansible.builtin.systemd_service:
+    name: dcm-k8s-container-service-provider.service
+    state: started
+    enabled: true
+  when: dcm_provider_k8s_container
+
+- name: Start ACM cluster service provider
+  ansible.builtin.systemd_service:
+    name: dcm-acm-cluster-service-provider.service
+    state: started
+    enabled: true
+  when: dcm_provider_acm_cluster
+
+- name: Start three-tier demo service provider
+  ansible.builtin.systemd_service:
+    name: dcm-three-tier-demo-service-provider.service
+    state: started
+    enabled: true
+  when: dcm_provider_three_tier_demo
