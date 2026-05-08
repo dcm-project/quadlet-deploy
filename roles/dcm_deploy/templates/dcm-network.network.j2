@@ -1,0 +1,10 @@
+[Unit]
+Description=DCM container network
+
+[Network]
+NetworkName=dcm-network
+Driver=bridge
+Internal=false
+
+[Install]
+WantedBy=multi-user.target

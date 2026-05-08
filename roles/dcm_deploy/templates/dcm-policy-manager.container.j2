@@ -1,0 +1,26 @@
+[Unit]
+Description=DCM Policy Manager
+After=dcm-postgres.service
+Requires=dcm-postgres.service
+
+[Container]
+Image={{ dcm_image_registry }}/policy-manager:{{ dcm_policy_manager_version }}
+ContainerName=policy-manager
+Network=dcm-network.network
+Pull=always
+EnvironmentFile={{ dcm_quadlet_dir }}/dcm.env
+Environment=BIND_ADDRESS=:8080
+Environment=LOG_LEVEL=info
+Environment=DB_NAME=policy-manager
+HealthCmd=bash -c 'echo > /dev/tcp/localhost/8080'
+HealthInterval=2s
+HealthRetries=15
+HealthTimeout=3s
+HealthStartPeriod=10s
+
+[Service]
+Restart=always
+TimeoutStartSec=300
+
+[Install]
+WantedBy=multi-user.target

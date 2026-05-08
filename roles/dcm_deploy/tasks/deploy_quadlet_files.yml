@@ -1,0 +1,134 @@
+---
+- name: Validate KubeVirt provider config
+  ansible.builtin.assert:
+    that: dcm_kubevirt_kubeconfig | length > 0
+    fail_msg: "dcm_kubevirt_kubeconfig must be set when dcm_provider_kubevirt is enabled"
+  when: dcm_provider_kubevirt
+
+- name: Validate K8s container provider config
+  ansible.builtin.assert:
+    that: dcm_k8s_container_sp_kubeconfig | length > 0
+    fail_msg: "dcm_k8s_container_sp_kubeconfig must be set when dcm_provider_k8s_container is enabled"
+  when: dcm_provider_k8s_container
+
+- name: Validate ACM cluster provider config
+  ansible.builtin.assert:
+    that:
+      - dcm_acm_cluster_sp_kubeconfig | length > 0
+      - dcm_acm_cluster_sp_base_domain | length > 0
+      - dcm_acm_cluster_sp_pull_secret | length > 0
+      - dcm_acm_cluster_sp_default_infra_env | length > 0
+      - dcm_acm_cluster_sp_agent_namespace | length > 0
+    fail_msg: >-
+      ACM cluster provider requires all of: dcm_acm_cluster_sp_kubeconfig,
+      dcm_acm_cluster_sp_base_domain, dcm_acm_cluster_sp_pull_secret,
+      dcm_acm_cluster_sp_default_infra_env, dcm_acm_cluster_sp_agent_namespace
+  when: dcm_provider_acm_cluster
+
+- name: Validate three-tier demo provider config
+  ansible.builtin.assert:
+    that:
+      - dcm_provider_k8s_container
+      - dcm_k8s_container_sp_kubeconfig | length > 0
+    fail_msg: "dcm_provider_three_tier_demo requires dcm_provider_k8s_container to also be enabled with a kubeconfig"
+  when: dcm_provider_three_tier_demo
+
+- name: Identify expected container quadlet files
+  ansible.builtin.set_fact:
+    dcm_expected_quadlets: >-
+      {{
+        ['dcm-postgres.container', 'dcm-nats.container',
+         'dcm-service-provider-manager.container', 'dcm-catalog-manager.container',
+         'dcm-policy-manager.container', 'dcm-placement-manager.container',
+         'dcm-gateway.container', 'dcm-ui.container'] +
+        (['dcm-kubevirt-service-provider.container'] if dcm_provider_kubevirt else []) +
+        (['dcm-k8s-container-service-provider.container'] if dcm_provider_k8s_container else []) +
+        (['dcm-acm-cluster-service-provider.container'] if dcm_provider_acm_cluster else []) +
+        (['dcm-three-tier-demo-service-provider.container'] if dcm_provider_three_tier_demo else [])
+      }}
+
+- name: Find existing container quadlet files
+  ansible.builtin.find:
+    paths: "{{ dcm_quadlet_dir }}"
+    patterns: "dcm-*.container"
+  register: existing_quadlets
+
+- name: Identify stale quadlet files
+  ansible.builtin.set_fact:
+    dcm_stale_quadlets: "{{ existing_quadlets.files | map(attribute='path') | map('basename') | difference(dcm_expected_quadlets) | list }}"
+
+- name: Stop stale container services
+  ansible.builtin.systemd_service:
+    name: "{{ item | replace('.container', '.service') }}"
+    state: stopped
+    enabled: false
+  loop: "{{ dcm_stale_quadlets }}"
+  ignore_errors: true
+
+- name: Remove stale container quadlet files
+  ansible.builtin.file:
+    path: "{{ dcm_quadlet_dir }}/{{ item }}"
+    state: absent
+  loop: "{{ dcm_stale_quadlets }}"
+
+- name: Deploy DCM network quadlet
+  ansible.builtin.template:
+    src: dcm-network.network.j2
+    dest: "{{ dcm_quadlet_dir }}/dcm-network.network"
+    mode: "0644"
+
+- name: Deploy DCM volume quadlets
+  ansible.builtin.template:
+    src: "{{ item }}.j2"
+    dest: "{{ dcm_quadlet_dir }}/{{ item }}"
+    mode: "0644"
+  loop:
+    - dcm-postgres-data.volume
+    - dcm-nats-data.volume
+
+- name: Deploy DCM core container quadlets
+  ansible.builtin.template:
+    src: "{{ item }}.j2"
+    dest: "{{ dcm_quadlet_dir }}/{{ item }}"
+    mode: "0644"
+  loop:
+    - dcm-postgres.container
+    - dcm-nats.container
+    - dcm-service-provider-manager.container
+    - dcm-catalog-manager.container
+    - dcm-policy-manager.container
+    - dcm-placement-manager.container
+    - dcm-gateway.container
+    - dcm-ui.container
+
+- name: Deploy KubeVirt service provider quadlet
+  ansible.builtin.template:
+    src: dcm-kubevirt-service-provider.container.j2
+    dest: "{{ dcm_quadlet_dir }}/dcm-kubevirt-service-provider.container"
+    mode: "0644"
+  when: dcm_provider_kubevirt
+
+- name: Deploy K8s container service provider quadlet
+  ansible.builtin.template:
+    src: dcm-k8s-container-service-provider.container.j2
+    dest: "{{ dcm_quadlet_dir }}/dcm-k8s-container-service-provider.container"
+    mode: "0644"
+  when: dcm_provider_k8s_container
+
+- name: Deploy ACM cluster service provider quadlet
+  ansible.builtin.template:
+    src: dcm-acm-cluster-service-provider.container.j2
+    dest: "{{ dcm_quadlet_dir }}/dcm-acm-cluster-service-provider.container"
+    mode: "0644"
+  when: dcm_provider_acm_cluster
+
+- name: Deploy three-tier demo service provider quadlet
+  ansible.builtin.template:
+    src: dcm-three-tier-demo-service-provider.container.j2
+    dest: "{{ dcm_quadlet_dir }}/dcm-three-tier-demo-service-provider.container"
+    mode: "0644"
+  when: dcm_provider_three_tier_demo
+
+- name: Reload systemd daemon
+  ansible.builtin.systemd_service:
+    daemon_reload: true

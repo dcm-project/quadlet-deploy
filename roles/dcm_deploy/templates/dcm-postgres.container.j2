@@ -1,0 +1,26 @@
+[Unit]
+Description=DCM PostgreSQL database
+
+[Container]
+Image={{ dcm_postgres_image }}:{{ dcm_postgres_image_tag }}
+ContainerName=postgres
+Network=dcm-network.network
+EnvironmentFile={{ dcm_quadlet_dir }}/dcm.env
+{% if dcm_publish_postgres_port %}
+PublishPort={{ dcm_postgres_port }}:5432
+{% endif %}
+Volume=dcm-postgres-data.volume:/var/lib/postgresql/data:Z
+Volume={{ dcm_config_dir }}/postgres-init:/docker-entrypoint-initdb.d:ro,z
+HealthCmd=pg_isready -U {{ dcm_db_user }} -d postgres
+HealthInterval=5s
+HealthRetries=5
+HealthTimeout=5s
+HealthStartPeriod=30s
+Notify=healthy
+
+[Service]
+Restart=always
+TimeoutStartSec=300
+
+[Install]
+WantedBy=multi-user.target

@@ -1,0 +1,43 @@
+---
+- name: Start PostgreSQL service
+  ansible.builtin.systemd_service:
+    name: dcm-postgres.service
+    state: started
+    enabled: true
+
+- name: Check if core databases exist
+  ansible.builtin.command: podman exec postgres psql -U {{ dcm_db_user }} -d postgres -tc "SELECT 1 FROM pg_database WHERE datname='{{ item }}'"
+  register: db_check
+  loop:
+    - service-provider
+    - policy-manager
+    - catalog-manager
+    - placement-manager
+  changed_when: false
+
+- name: Create missing core databases
+  ansible.builtin.command: podman exec postgres createdb -U {{ dcm_db_user }} {{ item.item }}
+  loop: "{{ db_check.results }}"
+  when: item.stdout | trim != "1"
+  register: db_create
+  changed_when: db_create.rc == 0
+  failed_when:
+    - db_create.rc != 0
+    - "'already exists' not in (db_create.stderr | default(''))"
+
+- name: Check if three-tier-sp database exists
+  ansible.builtin.command: podman exec postgres psql -U {{ dcm_db_user }} -d postgres -tc "SELECT 1 FROM pg_database WHERE datname='three-tier-sp'"
+  register: three_tier_db_check
+  changed_when: false
+  when: dcm_provider_three_tier_demo
+
+- name: Create three-tier-sp database
+  ansible.builtin.command: podman exec postgres createdb -U {{ dcm_db_user }} three-tier-sp
+  when:
+    - dcm_provider_three_tier_demo
+    - three_tier_db_check.stdout | default('') | trim != "1"
+  register: three_tier_db_create
+  changed_when: three_tier_db_create.rc == 0
+  failed_when:
+    - three_tier_db_create.rc != 0
+    - "'already exists' not in (three_tier_db_create.stderr | default(''))"

@@ -1,0 +1,27 @@
+[Unit]
+Description=DCM Placement Manager
+After=dcm-postgres.service
+Requires=dcm-postgres.service
+
+[Container]
+Image={{ dcm_image_registry }}/placement-manager:{{ dcm_placement_manager_version }}
+ContainerName=placement-manager
+Network=dcm-network.network
+Pull=always
+EnvironmentFile={{ dcm_quadlet_dir }}/dcm.env
+Environment=BIND_ADDRESS=:8080
+Environment=DB_NAME=placement-manager
+Environment=POLICY_MANAGER_EVALUATION_URL=http://policy-manager:8081
+Environment=SP_RESOURCE_MANAGER_URL=http://service-provider-manager:8080
+HealthCmd=bash -c 'echo > /dev/tcp/localhost/8080'
+HealthInterval=2s
+HealthRetries=15
+HealthTimeout=3s
+HealthStartPeriod=10s
+
+[Service]
+Restart=always
+TimeoutStartSec=300
+
+[Install]
+WantedBy=multi-user.target

@@ -1,0 +1,81 @@
+---
+- name: Verify Traefik health
+  ansible.builtin.uri:
+    url: "http://localhost:{{ dcm_gateway_port }}/ping"
+    method: GET
+    status_code: [200]
+
+- name: Verify manager health endpoints
+  ansible.builtin.uri:
+    url: "http://localhost:{{ dcm_gateway_port }}{{ item }}"
+    method: GET
+    status_code: [200]
+  loop:
+    - /api/v1alpha1/health/providers
+    - /api/v1alpha1/health/catalog
+    - /api/v1alpha1/health/policies
+    - /api/v1alpha1/health/placement
+
+- name: Verify DCM UI is accessible
+  ansible.builtin.uri:
+    url: "http://localhost:{{ dcm_ui_port }}/"
+    method: GET
+    status_code: [200]
+
+- name: Get running container names
+  ansible.builtin.command: podman ps --format {% raw %}'{{.Names}}'{% endraw %}
+  register: running_containers
+  changed_when: false
+
+- name: Assert core containers are running
+  ansible.builtin.assert:
+    that: "item in running_containers.stdout"
+    fail_msg: "Container {{ item }} is not running"
+  loop:
+    - postgres
+    - nats
+    - service-provider-manager
+    - catalog-manager
+    - policy-manager
+    - placement-manager
+    - gateway
+    - dcm-ui
+
+- name: Assert KubeVirt provider is running
+  ansible.builtin.assert:
+    that: "'kubevirt-service-provider' in running_containers.stdout"
+    fail_msg: "Container kubevirt-service-provider is not running"
+  when: dcm_provider_kubevirt
+
+- name: Assert K8s container provider is running
+  ansible.builtin.assert:
+    that: "'k8s-container-service-provider' in running_containers.stdout"
+    fail_msg: "Container k8s-container-service-provider is not running"
+  when: dcm_provider_k8s_container
+
+- name: Assert ACM cluster provider is running
+  ansible.builtin.assert:
+    that: "'acm-cluster-service-provider' in running_containers.stdout"
+    fail_msg: "Container acm-cluster-service-provider is not running"
+  when: dcm_provider_acm_cluster
+
+- name: Assert three-tier demo provider is running
+  ansible.builtin.assert:
+    that: "'three-tier-demo-service-provider' in running_containers.stdout"
+    fail_msg: "Container three-tier-demo-service-provider is not running"
+  when: dcm_provider_three_tier_demo
+
+- name: Verify KubeVirt provider health endpoint
+  ansible.builtin.command: podman exec kubevirt-service-provider bash -c 'echo > /dev/tcp/localhost/8081'
+  changed_when: false
+  when: dcm_provider_kubevirt
+
+- name: Verify K8s container provider health endpoint
+  ansible.builtin.command: podman exec k8s-container-service-provider bash -c 'echo > /dev/tcp/localhost/8080'
+  changed_when: false
+  when: dcm_provider_k8s_container
+
+- name: Verify ACM cluster provider health endpoint
+  ansible.builtin.command: podman exec acm-cluster-service-provider bash -c 'echo > /dev/tcp/localhost/8080'
+  changed_when: false
+  when: dcm_provider_acm_cluster

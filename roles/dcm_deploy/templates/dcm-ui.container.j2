@@ -1,0 +1,20 @@
+[Unit]
+Description=DCM Web UI
+After=dcm-gateway.service
+Requires=dcm-gateway.service
+
+[Container]
+Image={{ dcm_image_registry }}/dcm-ui:{{ dcm_ui_version }}
+ContainerName=dcm-ui
+Network=dcm-network.network
+Pull=always
+Environment=APP_BASE_URL=http://{{ ansible_host }}:{{ dcm_ui_port }}
+Environment=DCM_API_GATEWAY_URL=http://gateway:9080
+PublishPort={{ dcm_ui_port }}:7007
+
+[Service]
+Restart=always
+TimeoutStartSec=300
+
+[Install]
+WantedBy=multi-user.target

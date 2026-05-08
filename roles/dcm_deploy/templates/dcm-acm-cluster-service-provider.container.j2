@@ -1,0 +1,28 @@
+[Unit]
+Description=DCM ACM Cluster Service Provider
+After=dcm-service-provider-manager.service dcm-nats.service
+Requires=dcm-service-provider-manager.service dcm-nats.service
+
+[Container]
+Image={{ dcm_image_registry }}/acm-cluster-service-provider:{{ dcm_acm_cluster_service_provider_version }}
+ContainerName=acm-cluster-service-provider
+Network=dcm-network.network
+Pull=always
+EnvironmentFile={{ dcm_quadlet_dir }}/dcm-acm-cluster.env
+Environment=SP_NAME={{ dcm_acm_cluster_sp_name }}
+Environment=SP_ENDPOINT=http://acm-cluster-service-provider:8080
+Environment=DCM_REGISTRATION_URL=http://service-provider-manager:8080/api/v1alpha1
+Environment=SP_NATS_URL=nats://nats:4222
+Environment=SP_CLUSTER_NAMESPACE={{ dcm_acm_cluster_sp_namespace }}
+Environment=SP_BASE_DOMAIN={{ dcm_acm_cluster_sp_base_domain }}
+Environment=SP_DEFAULT_INFRA_ENV={{ dcm_acm_cluster_sp_default_infra_env }}
+Environment=SP_AGENT_NAMESPACE={{ dcm_acm_cluster_sp_agent_namespace }}
+Environment=KUBECONFIG=/kubeconfig
+Volume={{ dcm_acm_cluster_sp_kubeconfig }}:/kubeconfig:ro,z
+
+[Service]
+Restart=always
+TimeoutStartSec=300
+
+[Install]
+WantedBy=multi-user.target

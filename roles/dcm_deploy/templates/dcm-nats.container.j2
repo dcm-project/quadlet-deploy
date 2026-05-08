@@ -1,0 +1,18 @@
+[Unit]
+Description=DCM NATS message broker
+
+[Container]
+Image={{ dcm_nats_image }}:{{ dcm_nats_image_tag }}
+ContainerName=nats
+Network=dcm-network.network
+Exec=--jetstream --store_dir=/data
+PublishPort={{ dcm_nats_port }}:4222
+PublishPort={{ dcm_nats_monitor_port }}:8222
+Volume=dcm-nats-data.volume:/data:Z
+
+[Service]
+Restart=always
+TimeoutStartSec=300
+
+[Install]
+WantedBy=multi-user.target

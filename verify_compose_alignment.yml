@@ -1,0 +1,109 @@
+---
+# Standalone playbook to verify that every core service in the upstream
+# compose.yaml has a corresponding quadlet template. Run in CI to detect drift.
+#
+# Usage:
+#   ansible-playbook verify_compose_alignment.yml
+
+- name: "Verify compose-to-quadlet alignment"
+  hosts: localhost
+  connection: local
+  gather_facts: false
+
+  vars:
+    api_gateway_repo: "https://github.com/dcm-project/api-gateway.git"
+    api_gateway_version: "main"
+    clone_dest: "/tmp/dcm-api-gateway-alignment-check"
+    template_dir: "{{ playbook_dir }}/roles/dcm_deploy/templates"
+    # Core services (non-profile) that must have quadlet templates.
+    # Values are the template-extracted names (compose name with dcm- prefix stripped).
+    expected_core_services:
+      - postgres
+      - nats
+      - gateway
+      - service-provider-manager
+      - catalog-manager
+      - policy-manager
+      - placement-manager
+      - ui  # compose service 'dcm-ui' — its name already contains the dcm- prefix
+    # Optional services (behind compose profiles) — templates exist but are
+    # conditionally deployed
+    expected_optional_services:
+      - kubevirt-service-provider
+      - k8s-container-service-provider
+      - acm-cluster-service-provider
+      - three-tier-demo-service-provider
+    # Compose-to-quadlet name overrides for services whose compose name already
+    # contains the dcm- prefix (so the template strips it down differently)
+    compose_service_overrides:
+      dcm-ui: ui
+
+  tasks:
+    - name: Clone, verify, and clean up
+      block:
+        - name: Clone api-gateway repository
+          ansible.builtin.git:
+            repo: "{{ api_gateway_repo }}"
+            version: "{{ api_gateway_version }}"
+            dest: "{{ clone_dest }}"
+            force: true
+
+        - name: Read compose.yaml
+          ansible.builtin.slurp:
+            src: "{{ clone_dest }}/compose.yaml"
+          register: compose_raw
+
+        - name: Parse compose services
+          ansible.builtin.set_fact:
+            compose_services: "{{ (compose_raw.content | b64decode | from_yaml).services.keys() | list }}"
+
+        - name: Find quadlet container templates
+          ansible.builtin.find:
+            paths: "{{ template_dir }}"
+            patterns: "*.container.j2"
+          register: template_files
+
+        - name: Build list of services with quadlet templates
+          ansible.builtin.set_fact:
+            quadlet_services: "{{ template_files.files | map(attribute='path') | map('basename') | map('regex_replace', '^dcm-(.+)\\.container\\.j2$', '\\1') | list }}"
+
+        - name: Display compose services
+          ansible.builtin.debug:
+            msg: "Compose services: {{ compose_services | sort }}"
+
+        - name: Display quadlet services
+          ansible.builtin.debug:
+            msg: "Quadlet templates: {{ quadlet_services | sort }}"
+
+        - name: Assert all core compose services have quadlet templates
+          ansible.builtin.assert:
+            that: "item in quadlet_services"
+            fail_msg: "Core service '{{ item }}' from compose.yaml has no quadlet template (expected dcm-{{ item }}.container.j2)"
+            success_msg: "{{ item }}: OK"
+          loop: "{{ expected_core_services }}"
+
+        - name: Assert all optional compose services have quadlet templates
+          ansible.builtin.assert:
+            that: "item in quadlet_services"
+            fail_msg: "Optional service '{{ item }}' from compose.yaml has no quadlet template (expected dcm-{{ item }}.container.j2)"
+            success_msg: "{{ item }}: OK"
+          loop: "{{ expected_optional_services }}"
+
+        - name: Check for new compose services without templates
+          ansible.builtin.assert:
+            that: >-
+              (item in (expected_core_services + expected_optional_services)) or
+              (compose_service_overrides[item] | default('') in (expected_core_services + expected_optional_services))
+            fail_msg: "New compose service '{{ item }}' has no quadlet template — add one or update expected_optional_services"
+            success_msg: "{{ item }}: tracked"
+          loop: "{{ compose_services }}"
+
+        - name: Alignment check passed
+          ansible.builtin.debug:
+            msg: "All {{ compose_services | length }} compose services are covered by quadlet templates."
+
+      always:
+        - name: Clean up cloned repository
+          ansible.builtin.file:
+            path: "{{ clone_dest }}"
+            state: absent

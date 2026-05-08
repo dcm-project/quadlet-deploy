@@ -1,0 +1,31 @@
+---
+
+- name: "Run Role Task"
+  hosts: all
+  become: true
+  gather_facts: true
+
+  tasks:
+
+    - name: "Load vault variables from file"
+      when: vault_path is defined
+      ansible.builtin.include_vars:
+        file: "{{ vault_path }}"
+
+    - name: "Load extra variables from file"
+      when: vars_path is defined
+      ansible.builtin.include_vars:
+        file: "{{ vars_path }}"
+
+    - name: "Load vault variables from directory"
+      when: vault_dir is defined
+      ansible.builtin.include_vars:
+        dir: "{{ vault_dir }}"
+
+    - name: "Load extra variables from directory"
+      when: vars_dir is defined
+      ansible.builtin.include_vars:
+        dir: "{{ vars_dir }}"
+
+    - name: "Run the role task {{ role_name / task_name }}"
+      ansible.builtin.include_tasks: roles/{{ role_name }}/tasks/{{ task_name }}.yml
