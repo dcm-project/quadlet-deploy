@@ -1,0 +1,9 @@
+---
+- name: Destroy test environment
+  hosts: all
+  gather_facts: false
+  tasks:
+    - name: Remove molecule working directory
+      ansible.builtin.file:
+        path: /tmp/molecule-dcm
+        state: absent

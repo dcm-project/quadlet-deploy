@@ -1,0 +1,10 @@
+---
+- name: Prepare test environment
+  hosts: all
+  gather_facts: false
+  tasks:
+    - name: Create molecule quadlet directory
+      ansible.builtin.file:
+        path: /tmp/molecule-dcm/quadlet
+        state: directory
+        mode: "0755"
