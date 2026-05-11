@@ -8,6 +8,9 @@ on:
     branches: [main]
 
 jobs:
+  check-clean-commits:
+    uses: dcm-project/shared-workflows/.github/workflows/check-clean-commits.yaml@main
+
   lint:
     name: Lint
     runs-on: ubuntu-latest
@@ -17,10 +20,10 @@ jobs:
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
-          python-version: "3.12"
+          python-version: "3.13"
 
       - name: Install dependencies
-        run: pip install yamllint ansible-core ansible-lint
+        run: pip install yamllint 'ansible-core>=2.15' ansible-lint
 
       - name: Install required collections
         run: ansible-galaxy collection install ansible.posix
@@ -40,10 +43,10 @@ jobs:
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
-          python-version: "3.12"
+          python-version: "3.13"
 
       - name: Install dependencies
-        run: pip install ansible-core
+        run: pip install 'ansible-core>=2.15'
 
       - name: Install required collections
         run: ansible-galaxy collection install ansible.posix
@@ -63,10 +66,30 @@ jobs:
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
-          python-version: "3.12"
+          python-version: "3.13"
 
       - name: Install dependencies
-        run: pip install ansible-core
+        run: pip install 'ansible-core>=2.15'
 
       - name: Verify quadlet templates match upstream compose
         run: ansible-playbook verify_compose_alignment.yml
+
+  molecule:
+    name: Quadlet template rendering
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+
+      - name: Install dependencies
+        run: pip install 'ansible-core>=2.15' 'molecule>=26.0.0,<27'
+
+      - name: Install required collections
+        run: ansible-galaxy collection install ansible.posix
+
+      - name: Run Molecule tests
+        run: molecule test

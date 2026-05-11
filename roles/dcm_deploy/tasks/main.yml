@@ -1,18 +1,24 @@
 ---
 - name: "Ensure prerequisites"
   ansible.builtin.include_tasks: "prerequisites.yml"
+  tags: [prerequisites]
 
 - name: "Generate DCM configuration files"
   ansible.builtin.include_tasks: "generate_configs.yml"
+  tags: [generate_configs]
 
 - name: "Deploy quadlet unit files"
   ansible.builtin.include_tasks: "deploy_quadlet_files.yml"
+  tags: [deploy_quadlet_files]
 
 - name: "Initialize databases"
   ansible.builtin.include_tasks: "initialize_database.yml"
+  tags: [initialize_database]
 
 - name: "Start DCM services"
   ansible.builtin.include_tasks: "start_services.yml"
+  tags: [start_services]
 
 - name: "Validate the deployment"
   ansible.builtin.include_tasks: "validate_deployment.yml"
+  tags: [validate_deployment]

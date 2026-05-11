@@ -27,6 +27,12 @@ ansible-playbook -i inventory/hosts --extra-vars "role_name=dcm_deploy" --extra-
 
 # Check quadlet templates match upstream compose.yaml (runs locally, no inventory needed)
 ansible-playbook verify_compose_alignment.yml
+
+# Run Molecule template rendering tests (no inventory needed)
+molecule test
+
+# Run a single deployment phase using tags
+ansible-playbook -i inventory/hosts --tags deploy_quadlet_files main.yml
 ```
 
 ## Inventory
@@ -111,7 +117,7 @@ The three-tier-demo provider requires `dcm_provider_k8s_container` to be enabled
 
 ## Syncing with Upstream api-gateway
 
-The upstream compose.yaml at `https://github.com/dcm-project/api-gateway` is the source of truth. When it changes, this role must be updated to match. Run `ansible-playbook verify_compose_alignment.yml` first — it catches missing templates but NOT env var drift, dependency changes, or port changes.
+The upstream compose.yaml at `https://github.com/dcm-project/api-gateway` is the source of truth. When it changes, this role must be updated to match. Run `ansible-playbook verify_compose_alignment.yml` first — it checks template file existence, environment variable coverage, dependency ordering (`depends_on` vs `After=`/`Requires=`), port mappings, and image name alignment. If it passes, the templates are in sync with compose.
 
 ### New service added to compose.yaml
 
@@ -126,15 +132,17 @@ Files to update (in order):
 5. `roles/dcm_deploy/tasks/validate_deployment.yml` — add to container assertions (and health check if it has one)
 6. `roles/dcm_deploy/tasks/initialize_database.yml` — add database name if the service needs one. Core manager DBs go in the unconditional loop; optional provider DBs get their own conditional check/create tasks gated by `dcm_provider_*`
 7. `roles/dcm_deploy/templates/dcm-gateway.container.j2` — if it's a core manager routed through Traefik, add to `After=`/`Requires=`
-8. `verify_compose_alignment.yml` — add to `expected_core_services` or `expected_optional_services`
-9. `README.md` — update stack components table and variable reference
+8. `verify_compose_alignment.yml` — add to `expected_core_services` or `expected_optional_services`, `service_to_template` mapping, and `infra_image_mapping` if it's an infrastructure image (not a DCM manager)
+9. `molecule/default/verify.yml` — add to the appropriate container list (`core_containers` or `provider_containers`) and any relevant assertion groups (`manager_containers`, `env_file_containers`)
+10. `README.md` — update stack components table and variable reference
 
 ### Existing service changed (env vars, dependencies, ports)
 
-- Cross-reference every `Environment=` line in the affected template against compose.yaml
-- Check `After=`/`Requires=` in the template match compose `depends_on`
+Run `ansible-playbook verify_compose_alignment.yml` — it will catch most drift automatically. Then manually check anything the playbook can't verify:
+
 - Check `DB_NAME=` matches the database name in `initialize_database.yml`
 - Update health endpoints in `validate_deployment.yml` if API paths changed
+- If you add env vars to `alignment_allowlist` in `verify_compose_alignment.yml`, document why the divergence is intentional
 
 ### Image version bumps
 
@@ -143,3 +151,21 @@ Only update `defaults/main.yml` if compose pins a new major/minor (e.g., `postgr
 ### Config file changes (traefik.yml, routes.yml, init SQL)
 
 These are copied at deploy time from the cloned repo — usually no action needed here. But if new config files are added upstream (e.g., additional Traefik middleware), update `tasks/generate_configs.yml` to copy them.
+
+## CI
+
+GitHub Actions runs five jobs on every PR targeting `main`:
+
+- **check-clean-commits** — shared workflow that checks for merge commits, fixup/squash/WIP markers, vague commit messages
+- **Lint** — `yamllint` + `ansible-lint`
+- **Syntax check** — `ansible-playbook --syntax-check` on all playbooks
+- **Compose-to-quadlet alignment** — runs `verify_compose_alignment.yml` against live upstream compose.yaml
+- **Quadlet template rendering** — `molecule test` renders all core quadlet templates locally and asserts naming conventions, dependency symmetry, SELinux suffixes, Pull policy, env file references, and network membership
+
+### Molecule scenario
+
+The `molecule/default/` scenario uses a delegated driver (no containers) and only runs `deploy_quadlet_files` with `ANSIBLE_SKIP_TAGS: systemd` to avoid systemd calls. It tests template rendering correctness, not deployment. Assertions are in `molecule/default/verify.yml`. When adding a new service, update the container lists and assertion groups there.
+
+### Task tags
+
+Each phase in `tasks/main.yml` is tagged (`prerequisites`, `generate_configs`, `deploy_quadlet_files`, `initialize_database`, `start_services`, `validate_deployment`). The two `systemd_service` tasks in `deploy_quadlet_files.yml` are tagged `systemd` — this is how Molecule skips them in CI.

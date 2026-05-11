@@ -1,0 +1,210 @@
+---
+- name: Verify rendered quadlet files
+  hosts: all
+  gather_facts: false
+  vars:
+    quadlet_dir: /tmp/molecule-dcm/quadlet
+    core_containers:
+      - dcm-postgres.container
+      - dcm-nats.container
+      - dcm-service-provider-manager.container
+      - dcm-catalog-manager.container
+      - dcm-policy-manager.container
+      - dcm-placement-manager.container
+      - dcm-gateway.container
+      - dcm-ui.container
+    network_files:
+      - dcm-network.network
+    volume_files:
+      - dcm-postgres-data.volume
+      - dcm-nats-data.volume
+    provider_containers:
+      - dcm-kubevirt-service-provider.container
+      - dcm-k8s-container-service-provider.container
+      - dcm-acm-cluster-service-provider.container
+      - dcm-three-tier-demo-service-provider.container
+    # Manager images use Pull=always; infra containers (postgres, nats, gateway) do not
+    manager_containers:
+      - dcm-service-provider-manager.container
+      - dcm-catalog-manager.container
+      - dcm-policy-manager.container
+      - dcm-placement-manager.container
+      - dcm-ui.container
+    # Containers that use EnvironmentFile for shared env vars
+    env_file_containers:
+      - dcm-postgres.container
+      - dcm-service-provider-manager.container
+      - dcm-catalog-manager.container
+      - dcm-policy-manager.container
+      - dcm-placement-manager.container
+      - dcm-three-tier-demo-service-provider.container
+  tasks:
+    # --- File existence ---
+    - name: Stat core container files
+      ansible.builtin.stat:
+        path: "{{ quadlet_dir }}/{{ item }}"
+      register: core_stat
+      loop: "{{ core_containers }}"
+
+    - name: Assert core container files exist
+      ansible.builtin.assert:
+        that: item.stat.exists
+        fail_msg: "Missing core template: {{ item.item }}"
+      loop: "{{ core_stat.results }}"
+      loop_control:
+        label: "{{ item.item }}"
+
+    - name: Stat network file
+      ansible.builtin.stat:
+        path: "{{ quadlet_dir }}/{{ item }}"
+      register: network_stat
+      loop: "{{ network_files }}"
+
+    - name: Assert network file exists
+      ansible.builtin.assert:
+        that: item.stat.exists
+        fail_msg: "Missing network file: {{ item.item }}"
+      loop: "{{ network_stat.results }}"
+      loop_control:
+        label: "{{ item.item }}"
+
+    - name: Stat volume files
+      ansible.builtin.stat:
+        path: "{{ quadlet_dir }}/{{ item }}"
+      register: volume_stat
+      loop: "{{ volume_files }}"
+
+    - name: Assert volume files exist
+      ansible.builtin.assert:
+        that: item.stat.exists
+        fail_msg: "Missing volume file: {{ item.item }}"
+      loop: "{{ volume_stat.results }}"
+      loop_control:
+        label: "{{ item.item }}"
+
+    # --- Provider files should NOT exist in core-only mode ---
+    - name: Stat provider container files
+      ansible.builtin.stat:
+        path: "{{ quadlet_dir }}/{{ item }}"
+      register: provider_stat
+      loop: "{{ provider_containers }}"
+
+    - name: Assert provider container files do not exist
+      ansible.builtin.assert:
+        that: not item.stat.exists
+        fail_msg: "Provider template should not exist in core-only mode: {{ item.item }}"
+      loop: "{{ provider_stat.results }}"
+      loop_control:
+        label: "{{ item.item }}"
+
+    # --- Read all core container files for content assertions ---
+    - name: Slurp core container files
+      ansible.builtin.slurp:
+        src: "{{ quadlet_dir }}/{{ item }}"
+      register: core_slurp
+      loop: "{{ core_containers }}"
+
+    # --- ContainerName has no dcm- prefix (except dcm-ui which keeps it) ---
+    - name: Assert ContainerName has no dcm- prefix
+      ansible.builtin.assert:
+        that: >-
+          (item.content | b64decode) is not regex('ContainerName=dcm-')
+        fail_msg: "{{ item.item }} has ContainerName with dcm- prefix"
+      loop: "{{ core_slurp.results }}"
+      loop_control:
+        label: "{{ item.item }}"
+      when: item.item != 'dcm-ui.container'
+
+    # --- After=/Requires= use dcm-*.service unit names ---
+    - name: Extract After lines from core containers
+      ansible.builtin.set_fact:
+        after_lines: >-
+          {{ core_slurp.results | map(attribute='content') | map('b64decode')
+             | map('regex_findall', 'After=(.*)') | flatten }}
+        requires_lines: >-
+          {{ core_slurp.results | map(attribute='content') | map('b64decode')
+             | map('regex_findall', 'Requires=(.*)') | flatten }}
+
+    - name: Assert After lines reference dcm- service units
+      ansible.builtin.assert:
+        that: >-
+          item | regex_search('dcm-') is not none
+        fail_msg: "After line missing dcm- service reference: {{ item }}"
+      loop: "{{ after_lines }}"
+      when: "item != 'network-online.target'"
+
+    - name: Assert Requires lines reference dcm- service units
+      ansible.builtin.assert:
+        that: >-
+          item | regex_search('dcm-') is not none
+        fail_msg: "Requires line missing dcm- service reference: {{ item }}"
+      loop: "{{ requires_lines }}"
+
+    # --- After= and Requires= are symmetric ---
+    - name: Check After/Requires symmetry per container
+      ansible.builtin.assert:
+        that:
+          - _after_services | sort == _requires_services | sort
+        fail_msg: >-
+          {{ item.item }}: After and Requires are not symmetric.
+          After={{ _after_services | sort }} Requires={{ _requires_services | sort }}
+      vars:
+        _content: "{{ item.content | b64decode }}"
+        _after_raw: "{{ _content | regex_findall('After=(.*)') | first | default('') }}"
+        _requires_raw: "{{ _content | regex_findall('Requires=(.*)') | first | default('') }}"
+        _after_services: "{{ _after_raw.split() | reject('match', 'network-online.target') | list }}"
+        _requires_services: "{{ _requires_raw.split() | reject('match', 'network-online.target') | list }}"
+      loop: "{{ core_slurp.results }}"
+      loop_control:
+        label: "{{ item.item }}"
+
+    # --- Manager containers have Pull=always ---
+    - name: Slurp manager container files
+      ansible.builtin.slurp:
+        src: "{{ quadlet_dir }}/{{ item }}"
+      register: manager_slurp
+      loop: "{{ manager_containers }}"
+
+    - name: Assert manager containers have Pull=always
+      ansible.builtin.assert:
+        that: >-
+          'Pull=always' in (item.content | b64decode)
+        fail_msg: "{{ item.item }} is missing Pull=always"
+      loop: "{{ manager_slurp.results }}"
+      loop_control:
+        label: "{{ item.item }}"
+
+    # --- Core containers with EnvironmentFile point to dcm.env ---
+    - name: Assert EnvironmentFile points to dcm.env
+      ansible.builtin.assert:
+        that: >-
+          (item.content | b64decode) is regex('EnvironmentFile=.*/dcm\.env')
+        fail_msg: "{{ item.item }} is missing EnvironmentFile pointing to dcm.env"
+      loop: "{{ core_slurp.results }}"
+      loop_control:
+        label: "{{ item.item }}"
+      when: item.item in env_file_containers
+
+    # --- All Volume= lines have SELinux suffixes ---
+    - name: Extract Volume lines from core containers
+      ansible.builtin.set_fact:
+        volume_lines: >-
+          {{ core_slurp.results | map(attribute='content') | map('b64decode')
+             | map('regex_findall', 'Volume=(.*)') | flatten }}
+
+    - name: Assert all Volume lines have SELinux suffixes
+      ansible.builtin.assert:
+        that: >-
+          item is regex(':(Z|z|ro,z)\s*$')
+        fail_msg: "Volume line missing SELinux suffix: {{ item }}"
+      loop: "{{ volume_lines }}"
+
+    # --- All containers use Network=dcm-network.network ---
+    - name: Assert all core containers use dcm-network.network
+      ansible.builtin.assert:
+        that: >-
+          'Network=dcm-network.network' in (item.content | b64decode)
+        fail_msg: "{{ item.item }} is missing Network=dcm-network.network"
+      loop: "{{ core_slurp.results }}"
+      loop_control:
+        label: "{{ item.item }}"

@@ -1,6 +1,7 @@
 ---
 # Standalone playbook to verify that every core service in the upstream
-# compose.yaml has a corresponding quadlet template. Run in CI to detect drift.
+# compose.yaml has a corresponding quadlet template, and that env vars,
+# dependencies, ports, and image names are aligned. Run in CI to detect drift.
 #
 # Usage:
 #   ansible-playbook verify_compose_alignment.yml
@@ -15,6 +16,7 @@
     api_gateway_version: "main"
     clone_dest: "/tmp/dcm-api-gateway-alignment-check"
     template_dir: "{{ playbook_dir }}/roles/dcm_deploy/templates"
+
     # Core services (non-profile) that must have quadlet templates.
     # Values are the template-extracted names (compose name with dcm- prefix stripped).
     expected_core_services:
@@ -38,14 +40,54 @@
     compose_service_overrides:
       dcm-ui: ui
 
+    # Compose service name -> quadlet template filename
+    service_to_template:
+      postgres: dcm-postgres.container.j2
+      nats: dcm-nats.container.j2
+      gateway: dcm-gateway.container.j2
+      service-provider-manager: dcm-service-provider-manager.container.j2
+      catalog-manager: dcm-catalog-manager.container.j2
+      policy-manager: dcm-policy-manager.container.j2
+      placement-manager: dcm-placement-manager.container.j2
+      ui: dcm-ui.container.j2
+      kubevirt-service-provider: dcm-kubevirt-service-provider.container.j2
+      k8s-container-service-provider: dcm-k8s-container-service-provider.container.j2
+      acm-cluster-service-provider: dcm-acm-cluster-service-provider.container.j2
+      three-tier-demo-service-provider: dcm-three-tier-demo-service-provider.container.j2
+
+    # Reverse map: checked-service name -> compose service name (only entries
+    # that differ; most services use the same name in both)
+    service_to_compose:
+      ui: dcm-ui
+
+    # Per-service env vars that intentionally differ between compose and quadlet.
+    # Key = checked-service name, value = list of env var names to skip.
+    alignment_allowlist:
+      # Postgres env is provided via EnvironmentFile (dcm.env) not inline
+      postgres:
+        - POSTGRES_DB
+        - POSTGRES_USER
+        - POSTGRES_PASSWORD
+
+    # Infrastructure images use fully-variable names in templates (e.g.,
+    # {{ dcm_postgres_image }}) so we can't string-parse the image name.
+    # Map compose image name component to the Ansible variable used in the template.
+    infra_image_mapping:
+      postgres: dcm_postgres_image
+      nats: dcm_nats_image
+      traefik: dcm_traefik_image
+
   tasks:
     - name: Clone, verify, and clean up
       block:
+        # -- Phase 1: Clone and parse ----------------------------------------
         - name: Clone api-gateway repository
           ansible.builtin.git:
             repo: "{{ api_gateway_repo }}"
             version: "{{ api_gateway_version }}"
             dest: "{{ clone_dest }}"
+            single_branch: true
+            depth: 1
             force: true
 
         - name: Read compose.yaml
@@ -53,10 +95,25 @@
             src: "{{ clone_dest }}/compose.yaml"
           register: compose_raw
 
-        - name: Parse compose services
+        - name: Parse full compose data
           ansible.builtin.set_fact:
-            compose_services: "{{ (compose_raw.content | b64decode | from_yaml).services.keys() | list }}"
+            compose_data: "{{ compose_raw.content | b64decode | from_yaml }}"
 
+        - name: Extract compose service names
+          ansible.builtin.set_fact:
+            compose_services: "{{ compose_data.services.keys() | list }}"
+
+        - name: Set all checked services list
+          ansible.builtin.set_fact:
+            all_checked_services: "{{ expected_core_services + expected_optional_services }}"
+
+        - name: "[Pre-flight] Assert all services have template mappings"
+          ansible.builtin.assert:
+            that: "item in service_to_template"
+            fail_msg: "Service '{{ item }}' is in checked services but missing from service_to_template"
+          loop: "{{ all_checked_services }}"
+
+        # -- Phase 2: Read quadlet templates ----------------------------------
         - name: Find quadlet container templates
           ansible.builtin.find:
             paths: "{{ template_dir }}"
@@ -67,29 +124,61 @@
           ansible.builtin.set_fact:
             quadlet_services: "{{ template_files.files | map(attribute='path') | map('basename') | map('regex_replace', '^dcm-(.+)\\.container\\.j2$', '\\1') | list }}"
 
-        - name: Display compose services
+        - name: Slurp all quadlet container templates
+          ansible.builtin.slurp:
+            src: "{{ template_dir }}/{{ service_to_template[item] }}"
+          loop: "{{ all_checked_services }}"
+          register: quadlet_templates_raw
+
+        - name: Slurp dcm.env.j2
+          ansible.builtin.slurp:
+            src: "{{ template_dir }}/dcm.env.j2"
+          register: dcm_env_raw
+
+        - name: Slurp dcm-acm-cluster.env.j2
+          ansible.builtin.slurp:
+            src: "{{ template_dir }}/dcm-acm-cluster.env.j2"
+          register: acm_env_raw
+
+        - name: Parse shared env var names from dcm.env.j2
+          ansible.builtin.set_fact:
+            shared_env_vars: "{{ (dcm_env_raw.content | b64decode).splitlines() | select('match', '^[A-Z_]+=') | map('regex_replace', '=.*$', '') | list }}"
+
+        - name: Parse ACM env var names from dcm-acm-cluster.env.j2
+          ansible.builtin.set_fact:
+            acm_env_vars: "{{ (acm_env_raw.content | b64decode).splitlines() | select('match', '^[A-Z_]+=') | map('regex_replace', '=.*$', '') | list }}"
+
+        - name: Build per-service template content map
+          ansible.builtin.set_fact:
+            template_content: "{{ template_content | default({}) | combine({item.item: item.content | b64decode}) }}"
+          loop: "{{ quadlet_templates_raw.results }}"
+          loop_control:
+            label: "{{ item.item }}"
+
+        # -- Phase 3: Template file existence ---------------------------------
+        - name: "[Files] Display compose services"
           ansible.builtin.debug:
             msg: "Compose services: {{ compose_services | sort }}"
 
-        - name: Display quadlet services
+        - name: "[Files] Display quadlet services"
           ansible.builtin.debug:
             msg: "Quadlet templates: {{ quadlet_services | sort }}"
 
-        - name: Assert all core compose services have quadlet templates
+        - name: "[Files] Assert all core compose services have quadlet templates"
           ansible.builtin.assert:
             that: "item in quadlet_services"
             fail_msg: "Core service '{{ item }}' from compose.yaml has no quadlet template (expected dcm-{{ item }}.container.j2)"
             success_msg: "{{ item }}: OK"
           loop: "{{ expected_core_services }}"
 
-        - name: Assert all optional compose services have quadlet templates
+        - name: "[Files] Assert all optional compose services have quadlet templates"
           ansible.builtin.assert:
             that: "item in quadlet_services"
             fail_msg: "Optional service '{{ item }}' from compose.yaml has no quadlet template (expected dcm-{{ item }}.container.j2)"
             success_msg: "{{ item }}: OK"
           loop: "{{ expected_optional_services }}"
 
-        - name: Check for new compose services without templates
+        - name: "[Files] Check for new compose services without templates"
           ansible.builtin.assert:
             that: >-
               (item in (expected_core_services + expected_optional_services)) or
@@ -98,9 +187,217 @@
             success_msg: "{{ item }}: tracked"
           loop: "{{ compose_services }}"
 
+        # -- Phase 4: Environment variable coverage ---------------------------
+        - name: "[Env] Build compose env vars per service"
+          ansible.builtin.set_fact:
+            compose_env_per_service: "{{ compose_env_per_service | default({}) | combine({item: _env_keys}) }}"
+          vars:
+            _compose_name: "{{ service_to_compose[item] | default(item) }}"
+            _svc: "{{ compose_data.services[_compose_name] }}"
+            _raw_env: "{{ _svc.environment | default({}) }}"
+            _env_keys: "{% if _raw_env is mapping %}{{ _raw_env.keys() | list }}{% else %}{{ _raw_env | map('regex_replace', '=.*$', '') | list }}{% endif %}"
+          loop: "{{ all_checked_services }}"
+          loop_control:
+            label: "{{ item }}"
+
+        - name: "[Env] Build quadlet env vars per service"
+          ansible.builtin.set_fact:
+            quadlet_env_per_service: "{{ quadlet_env_per_service | default({}) | combine({item: _all_vars}) }}"
+          vars:
+            _content: "{{ template_content[item] }}"
+            _template_vars: "{{ _content.splitlines() | select('match', '^Environment=') | map('regex_replace', '^Environment=([A-Za-z_][A-Za-z0-9_]*)=.*$', '\\1') | list }}"
+            _has_shared_env: "{{ 'dcm.env' in _content }}"
+            _effective_shared: "{{ shared_env_vars if _has_shared_env else [] }}"
+            _has_acm_env: "{{ 'dcm-acm-cluster.env' in _content }}"
+            _effective_acm: "{{ acm_env_vars if _has_acm_env else [] }}"
+            _all_vars: "{{ _template_vars + _effective_shared + _effective_acm }}"
+          loop: "{{ all_checked_services }}"
+          loop_control:
+            label: "{{ item }}"
+
+        - name: "[Env] Build env check pairs"
+          ansible.builtin.set_fact:
+            env_check_pairs: >-
+              {% set pairs = [] %}
+              {% for svc in all_checked_services %}
+              {%   set allowed = alignment_allowlist[svc] | default([]) %}
+              {%   for var in compose_env_per_service[svc] | default([]) %}
+              {%     if var not in allowed %}
+              {%       set _ = pairs.append([svc, var]) %}
+              {%     endif %}
+              {%   endfor %}
+              {% endfor %}
+              {{ pairs | to_json }}
+
+        - name: "[Env] Assert every compose env var is covered in quadlet"
+          ansible.builtin.assert:
+            that: "item.1 in quadlet_env_per_service[item.0]"
+            fail_msg: "Service '{{ item.0 }}' is missing env var '{{ item.1 }}' — expected in quadlet template, dcm.env, or dcm-acm-cluster.env"
+            success_msg: "{{ item.0 }}/{{ item.1 }}: OK"
+          loop: "{{ env_check_pairs | from_json }}"
+          loop_control:
+            label: "{{ item.0 }}/{{ item.1 }}"
+
+        # -- Phase 5: Dependency ordering -------------------------------------
+        - name: "[Deps] Build compose dependencies per service"
+          ansible.builtin.set_fact:
+            compose_deps_per_service: "{{ compose_deps_per_service | default({}) | combine({item: _dep_names}) }}"
+          vars:
+            _compose_name: "{{ service_to_compose[item] | default(item) }}"
+            _svc: "{{ compose_data.services[_compose_name] }}"
+            _raw_deps: "{{ _svc.depends_on | default({}) }}"
+            _dep_names: "{% if _raw_deps is mapping %}{{ _raw_deps.keys() | list }}{% else %}{{ _raw_deps | list }}{% endif %}"
+          loop: "{{ all_checked_services }}"
+          loop_control:
+            label: "{{ item }}"
+
+        - name: "[Deps] Build dependency check pairs"
+          ansible.builtin.set_fact:
+            dep_check_pairs: >-
+              {% set pairs = [] %}
+              {% for svc in all_checked_services %}
+              {%   for dep in compose_deps_per_service[svc] | default([]) %}
+              {%     set _ = pairs.append([svc, dep]) %}
+              {%   endfor %}
+              {% endfor %}
+              {{ pairs | to_json }}
+
+        - name: "[Deps] Assert compose dependencies appear in After= and Requires="
+          ansible.builtin.assert:
+            that:
+              - _expected_unit in _after_line
+              - _expected_unit in _requires_line
+            fail_msg: "Service '{{ item.0 }}' is missing dependency '{{ item.1 }}' (expected '{{ _expected_unit }}' in both After= and Requires=)"
+            success_msg: "{{ item.0 }}/{{ item.1 }}: OK"
+          loop: "{{ dep_check_pairs | from_json }}"
+          loop_control:
+            label: "{{ item.0 }} -> {{ item.1 }}"
+          vars:
+            _expected_unit: "dcm-{{ item.1 }}.service"
+            _content: "{{ template_content[item.0] }}"
+            _after_line: "{{ _content.splitlines() | select('match', '^After=') | join(' ') }}"
+            _requires_line: "{{ _content.splitlines() | select('match', '^Requires=') | join(' ') }}"
+
+        # -- Phase 6: Port mapping --------------------------------------------
+        - name: "[Ports] Build compose container-side ports per service"
+          ansible.builtin.set_fact:
+            compose_ports_per_service: "{{ compose_ports_per_service | default({}) | combine({item: _container_ports}) }}"
+          vars:
+            _compose_name: "{{ service_to_compose[item] | default(item) }}"
+            _svc: "{{ compose_data.services[_compose_name] }}"
+            _raw_ports: "{{ _svc.ports | default([]) }}"
+            _container_ports: "{{ _raw_ports | map('regex_replace', '^.*:', '') | map('regex_replace', '\"', '') | list }}"
+          loop: "{{ all_checked_services }}"
+          loop_control:
+            label: "{{ item }}"
+
+        - name: "[Ports] Build quadlet container-side ports per service"
+          ansible.builtin.set_fact:
+            quadlet_ports_per_service: "{{ quadlet_ports_per_service | default({}) | combine({item: _container_ports}) }}"
+          vars:
+            _content: "{{ template_content[item] }}"
+            _container_ports: "{{ _content.splitlines() | select('match', '^PublishPort=') | map('regex_replace', '^PublishPort=.*:', '') | list }}"
+          loop: "{{ all_checked_services }}"
+          loop_control:
+            label: "{{ item }}"
+
+        - name: "[Ports] Identify services with published ports"
+          ansible.builtin.set_fact:
+            services_with_ports: >-
+              {% set result = [] %}
+              {% for svc in all_checked_services %}
+              {%   if compose_ports_per_service[svc] | default([]) | length > 0 %}
+              {%     set _ = result.append(svc) %}
+              {%   endif %}
+              {% endfor %}
+              {{ result | to_json }}
+
+        - name: "[Ports] Assert compose container-side ports match quadlet"
+          ansible.builtin.assert:
+            that:
+              - _compose_set | sort == _quadlet_set | sort
+            fail_msg: "Service '{{ item }}' port mismatch — compose={{ _compose_set | sort }} quadlet={{ _quadlet_set | sort }}"
+            success_msg: "{{ item }}: {{ _compose_set | sort }}"
+          vars:
+            _compose_set: "{{ compose_ports_per_service[item] | map('string') | list }}"
+            _quadlet_set: "{{ quadlet_ports_per_service[item] | map('string') | list }}"
+          loop: "{{ services_with_ports | from_json }}"
+          loop_control:
+            label: "{{ item }}"
+
+        # -- Phase 7: Image name check ----------------------------------------
+        - name: "[Image] Build compose image names per service"
+          ansible.builtin.set_fact:
+            compose_image_per_service: "{{ compose_image_per_service | default({}) | combine({item: _image_name}) }}"
+          vars:
+            _compose_name: "{{ service_to_compose[item] | default(item) }}"
+            _svc: "{{ compose_data.services[_compose_name] }}"
+            _raw_image: "{{ _svc.image }}"
+            # Extract the name component: after last '/', before ':'
+            _image_name: "{{ _raw_image | regex_replace('^.*/', '') | regex_replace(':.*$', '') }}"
+          loop: "{{ all_checked_services }}"
+          loop_control:
+            label: "{{ item }}"
+
+        - name: "[Image] Identify infrastructure vs manager services"
+          ansible.builtin.set_fact:
+            infra_services: >-
+              {% set result = [] %}
+              {% for svc in all_checked_services %}
+              {%   if compose_image_per_service[svc] in infra_image_mapping %}
+              {%     set _ = result.append(svc) %}
+              {%   endif %}
+              {% endfor %}
+              {{ result | to_json }}
+            manager_services: >-
+              {% set result = [] %}
+              {% for svc in all_checked_services %}
+              {%   if compose_image_per_service[svc] not in infra_image_mapping %}
+              {%     set _ = result.append(svc) %}
+              {%   endif %}
+              {% endfor %}
+              {{ result | to_json }}
+
+        - name: "[Image] Build quadlet image names for manager services"
+          ansible.builtin.set_fact:
+            quadlet_image_per_service: "{{ quadlet_image_per_service | default({}) | combine({item: _image_name}) }}"
+          vars:
+            _content: "{{ template_content[item] }}"
+            _image_line: "{{ _content.splitlines() | select('match', '^Image=') | first }}"
+            # Extract the static name between last '/' and ':'
+            _image_name: "{{ _image_line | regex_replace('^.*/', '') | regex_replace(':.*$', '') }}"
+          loop: "{{ manager_services | from_json }}"
+          loop_control:
+            label: "{{ item }}"
+
+        - name: "[Image] Assert manager image names match compose"
+          ansible.builtin.assert:
+            that:
+              - compose_image_per_service[item] == quadlet_image_per_service[item]
+            fail_msg: "Service '{{ item }}' image name mismatch — compose='{{ compose_image_per_service[item] }}' quadlet='{{ quadlet_image_per_service[item] }}'"
+            success_msg: "{{ item }}: {{ compose_image_per_service[item] }}"
+          loop: "{{ manager_services | from_json }}"
+          loop_control:
+            label: "{{ item }}"
+
+        - name: "[Image] Assert infrastructure images use correct Ansible variable"
+          ansible.builtin.assert:
+            that:
+              - _expected_var in _image_line
+            fail_msg: "Service '{{ item }}' image variable mismatch — expected '{{ _expected_var }}' in Image= line but got: {{ _image_line }}"
+            success_msg: "{{ item }}: uses {{ _expected_var }}"
+          vars:
+            _content: "{{ template_content[item] }}"
+            _image_line: "{{ _content.splitlines() | select('match', '^Image=') | first }}"
+            _compose_name: "{{ compose_image_per_service[item] }}"
+            _expected_var: "{{ infra_image_mapping[_compose_name] }}"
+          loop: "{{ infra_services | from_json }}"
+          loop_control:
+            label: "{{ item }}"
+
         - name: Alignment check passed
           ansible.builtin.debug:
-            msg: "All {{ compose_services | length }} compose services are covered by quadlet templates."
+            msg: "All {{ compose_services | length }} compose services verified: template files, env vars, dependencies, ports, and image names."
 
       always:
         - name: Clean up cloned repository

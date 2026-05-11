@@ -64,6 +64,7 @@
     enabled: false
   loop: "{{ dcm_stale_quadlets }}"
   ignore_errors: true
+  tags: [systemd]
 
 - name: Remove stale container quadlet files
   ansible.builtin.file:
@@ -132,3 +133,4 @@
 - name: Reload systemd daemon
   ansible.builtin.systemd_service:
     daemon_reload: true
+  tags: [systemd]
