@@ -36,10 +36,24 @@
     state: enabled
   notify: Reload firewalld
 
+- name: Create rootless XDG directory structure
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: directory
+    owner: "{{ dcm_rootless_user }}"
+    group: "{{ dcm_rootless_user }}"
+    mode: "0755"
+  loop:
+    - "{{ dcm_rootless_home }}/.config/containers/systemd"
+    - "{{ dcm_rootless_home }}/.local/share/dcm/config"
+  when: dcm_rootless
+
 - name: Create configuration directories
   ansible.builtin.file:
     path: "{{ item }}"
     state: directory
+    owner: "{{ _dcm_file_owner }}"
+    group: "{{ _dcm_file_group }}"
     mode: "0755"
   loop:
     - "{{ dcm_config_dir }}/traefik/dynamic"

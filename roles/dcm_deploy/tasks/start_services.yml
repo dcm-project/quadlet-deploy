@@ -4,6 +4,10 @@
     name: dcm-nats.service
     state: started
     enabled: true
+    scope: "{{ _dcm_systemd_scope }}"
+  become: true
+  become_user: "{{ _dcm_become_user }}"
+  environment: "{{ _dcm_rootless_env }}"
 
 - name: Wait for NATS to be ready
   ansible.builtin.wait_for:
@@ -16,6 +20,10 @@
     name: "{{ item }}"
     state: started
     enabled: true
+    scope: "{{ _dcm_systemd_scope }}"
+  become: true
+  become_user: "{{ _dcm_become_user }}"
+  environment: "{{ _dcm_rootless_env }}"
   loop:
     - dcm-service-provider-manager.service
     - dcm-catalog-manager.service
@@ -24,6 +32,9 @@
 
 - name: Wait for manager containers to be healthy
   ansible.builtin.command: podman inspect --format {% raw %}'{{.State.Health.Status}}'{% endraw %} {{ item }}
+  become: true
+  become_user: "{{ _dcm_become_user }}"
+  environment: "{{ _dcm_rootless_env }}"
   register: manager_health
   until: manager_health.stdout | trim == "healthy"
   retries: 30
@@ -40,18 +51,30 @@
     name: dcm-gateway.service
     state: started
     enabled: true
+    scope: "{{ _dcm_systemd_scope }}"
+  become: true
+  become_user: "{{ _dcm_become_user }}"
+  environment: "{{ _dcm_rootless_env }}"
 
 - name: Start DCM UI service
   ansible.builtin.systemd_service:
     name: dcm-ui.service
     state: started
     enabled: true
+    scope: "{{ _dcm_systemd_scope }}"
+  become: true
+  become_user: "{{ _dcm_become_user }}"
+  environment: "{{ _dcm_rootless_env }}"
 
 - name: Start KubeVirt service provider
   ansible.builtin.systemd_service:
     name: dcm-kubevirt-service-provider.service
     state: started
     enabled: true
+    scope: "{{ _dcm_systemd_scope }}"
+  become: true
+  become_user: "{{ _dcm_become_user }}"
+  environment: "{{ _dcm_rootless_env }}"
   when: dcm_provider_kubevirt
 
 - name: Start K8s container service provider
@@ -59,6 +82,10 @@
     name: dcm-k8s-container-service-provider.service
     state: started
     enabled: true
+    scope: "{{ _dcm_systemd_scope }}"
+  become: true
+  become_user: "{{ _dcm_become_user }}"
+  environment: "{{ _dcm_rootless_env }}"
   when: dcm_provider_k8s_container
 
 - name: Start ACM cluster service provider
@@ -66,6 +93,10 @@
     name: dcm-acm-cluster-service-provider.service
     state: started
     enabled: true
+    scope: "{{ _dcm_systemd_scope }}"
+  become: true
+  become_user: "{{ _dcm_become_user }}"
+  environment: "{{ _dcm_rootless_env }}"
   when: dcm_provider_acm_cluster
 
 - name: Start three-tier demo service provider
@@ -73,4 +104,8 @@
     name: dcm-three-tier-demo-service-provider.service
     state: started
     enabled: true
+    scope: "{{ _dcm_systemd_scope }}"
+  become: true
+  become_user: "{{ _dcm_become_user }}"
+  environment: "{{ _dcm_rootless_env }}"
   when: dcm_provider_three_tier_demo

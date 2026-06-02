@@ -81,7 +81,7 @@ The `pull_secret` must be a valid `.dockerconfigjson` JSON string, base64-encode
 
 **Playbook entry points:** `main.yml` runs the full role. `run_role.yml`, `run_role_task.yml`, and `run_task.yml` are helpers for running individual roles or task phases. All four load variables from `vault_path`/`vault_dir` and `vars_path`/`vars_dir` extra-vars before executing.
 
-**The role** (`roles/dcm_deploy/`) deploys 12 containers in six sequential phases defined in `tasks/main.yml`: prerequisites → generate_configs → deploy_quadlet_files → initialize_database → start_services → validate_deployment.
+**The role** (`roles/dcm_deploy/`) deploys 12 containers in six sequential phases defined in `tasks/main.yml`: prerequisites → generate_configs → deploy_quadlet_files → initialize_database → start_services → validate_deployment. An optional `resolve_rootless_vars` phase runs first (when `dcm_rootless: true`) to set internal facts that adapt all paths, ownership, and systemd scope for rootless Podman deployment.
 
 **Config source of truth:** Traefik config and PostgreSQL init SQL are NOT templated — they're copied from a clone of the upstream [api-gateway](https://github.com/dcm-project/api-gateway) repo at deploy time. Only `dcm.env.j2` and the quadlet unit files are Jinja2 templates.
 
@@ -114,6 +114,20 @@ All quadlet templates are in `roles/dcm_deploy/templates/`. When editing:
 Optional providers (kubevirt, k8s-container, acm-cluster, three-tier-demo) are gated by `dcm_provider_*` boolean vars. Each provider's required vars are validated before templating — kubevirt/k8s-container only need a kubeconfig, but ACM needs five additional fields (see "Deploying Providers" above). The kubeconfig env var name differs per provider (`KUBERNETES_KUBECONFIG`, `SP_K8S_KUBECONFIG`, `KUBECONFIG`) — don't copy-paste between templates.
 
 The three-tier-demo provider requires `dcm_provider_k8s_container` to be enabled; it shares the `dcm_k8s_container_sp_kubeconfig` path.
+
+## Rootless Support
+
+When `dcm_rootless: true`, the `resolve_rootless_vars` phase sets internal facts that the rest of the role consumes transparently:
+
+- `_dcm_systemd_scope` — `user` (vs `system`)
+- `_dcm_wanted_by` — `default.target` (vs `multi-user.target`)
+- `_dcm_file_owner` / `_dcm_file_group` — the rootless user/group
+- `_dcm_become_user` — the user to `become` for systemd and podman operations
+- `_dcm_rootless_env` — environment dict with `XDG_RUNTIME_DIR` for user-scoped dbus
+
+The `dcm_quadlet_dir` and `dcm_config_dir` variables are overridden via `set_fact` to point at user-scoped paths. Existing template and task references work unchanged because they use these variable names.
+
+Rootless and rootful are mutually exclusive on the same host. There is no migration path between them — data volumes are stored in different Podman storage locations.
 
 ## Syncing with Upstream api-gateway
 
@@ -154,17 +168,20 @@ These are copied at deploy time from the cloned repo — usually no action neede
 
 ## CI
 
-GitHub Actions runs five jobs on every PR targeting `main`:
+GitHub Actions runs six jobs on every PR targeting `main`:
 
 - **check-clean-commits** — shared workflow that checks for merge commits, fixup/squash/WIP markers, vague commit messages
 - **Lint** — `yamllint` + `ansible-lint`
 - **Syntax check** — `ansible-playbook --syntax-check` on all playbooks
 - **Compose-to-quadlet alignment** — runs `verify_compose_alignment.yml` against live upstream compose.yaml
 - **Quadlet template rendering** — `molecule test` renders all core quadlet templates locally and asserts naming conventions, dependency symmetry, SELinux suffixes, Pull policy, env file references, and network membership
+- **Quadlet template rendering (rootless)** — `molecule test -s rootless` renders templates with `dcm_rootless: true` and asserts rootless-specific paths, `WantedBy=default.target`, and systemd scope
 
 ### Molecule scenario
 
 The `molecule/default/` scenario uses a delegated driver (no containers) and only runs `deploy_quadlet_files` with `ANSIBLE_SKIP_TAGS: systemd` to avoid systemd calls. It tests template rendering correctness, not deployment. Assertions are in `molecule/default/verify.yml`. When adding a new service, update the container lists and assertion groups there.
+
+The `molecule/rootless/` scenario is identical in structure but sets `dcm_rootless: true` in its converge variables. It verifies that templates render with user-scoped paths and `WantedBy=default.target`. File ownership is not asserted because the delegated driver runs as the test user, not a real `dcm` service account. Assertions are in `molecule/rootless/verify.yml`.
 
 ### Task tags
 

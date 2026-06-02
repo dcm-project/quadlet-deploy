@@ -85,3 +85,9 @@ dcm_three_tier_demo_sp_namespace: "default"
 
 # Firewall
 dcm_firewall_zone: "public"
+
+# Rootless deployment
+dcm_rootless: false
+dcm_rootless_user: "dcm"
+dcm_rootless_create_user: true
+dcm_rootless_home: "/home/{{ dcm_rootless_user }}"

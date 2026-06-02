@@ -208,3 +208,28 @@
       loop: "{{ core_slurp.results }}"
       loop_control:
         label: "{{ item.item }}"
+
+    # --- WantedBy matches rootful mode (multi-user.target) ---
+    - name: Assert WantedBy=multi-user.target in core containers
+      ansible.builtin.assert:
+        that: >-
+          'WantedBy=multi-user.target' in (item.content | b64decode)
+        fail_msg: "{{ item.item }} should have WantedBy=multi-user.target in rootful mode"
+      loop: "{{ core_slurp.results }}"
+      loop_control:
+        label: "{{ item.item }}"
+
+    - name: Slurp network file
+      ansible.builtin.slurp:
+        src: "{{ quadlet_dir }}/{{ item }}"
+      register: network_slurp
+      loop: "{{ network_files }}"
+
+    - name: Assert WantedBy=multi-user.target in network file
+      ansible.builtin.assert:
+        that: >-
+          'WantedBy=multi-user.target' in (item.content | b64decode)
+        fail_msg: "{{ item.item }} should have WantedBy=multi-user.target in rootful mode"
+      loop: "{{ network_slurp.results }}"
+      loop_control:
+        label: "{{ item.item }}"

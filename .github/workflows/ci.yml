@@ -23,7 +23,7 @@ jobs:
           python-version: "3.13"
 
       - name: Install dependencies
-        run: pip install yamllint 'ansible-core>=2.15' ansible-lint
+        run: pip install yamllint 'ansible-core>=2.16' ansible-lint
 
       - name: Install required collections
         run: ansible-galaxy collection install ansible.posix
@@ -46,7 +46,7 @@ jobs:
           python-version: "3.13"
 
       - name: Install dependencies
-        run: pip install 'ansible-core>=2.15'
+        run: pip install 'ansible-core>=2.16'
 
       - name: Install required collections
         run: ansible-galaxy collection install ansible.posix
@@ -69,7 +69,7 @@ jobs:
           python-version: "3.13"
 
       - name: Install dependencies
-        run: pip install 'ansible-core>=2.15'
+        run: pip install 'ansible-core>=2.16'
 
       - name: Verify quadlet templates match upstream compose
         run: ansible-playbook verify_compose_alignment.yml
@@ -86,10 +86,30 @@ jobs:
           python-version: "3.13"
 
       - name: Install dependencies
-        run: pip install 'ansible-core>=2.15' 'molecule>=26.0.0,<27'
+        run: pip install 'ansible-core>=2.16' 'molecule>=26.0.0,<27'
 
       - name: Install required collections
         run: ansible-galaxy collection install ansible.posix
 
       - name: Run Molecule tests
         run: molecule test
+
+  molecule-rootless:
+    name: Quadlet template rendering (rootless)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+
+      - name: Install dependencies
+        run: pip install 'ansible-core>=2.16' 'molecule>=26.0.0,<27'
+
+      - name: Install required collections
+        run: ansible-galaxy collection install ansible.posix
+
+      - name: Run Molecule rootless tests
+        run: molecule test -s rootless

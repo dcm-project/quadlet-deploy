@@ -8,6 +8,14 @@
     dcm_kubevirt_kubeconfig: /tmp/molecule-dcm/kubeconfig-kubevirt
     dcm_k8s_container_sp_kubeconfig: /tmp/molecule-dcm/kubeconfig-k8s
     dcm_acm_cluster_sp_kubeconfig: /tmp/molecule-dcm/kubeconfig-acm
+    # Rootful-mode internal facts (normally set by resolve_rootless_vars.yml)
+    dcm_rootless: false
+    _dcm_systemd_scope: system
+    _dcm_wanted_by: multi-user.target
+    _dcm_file_owner: "{{ omit }}"
+    _dcm_file_group: "{{ omit }}"
+    _dcm_become_user: root
+    _dcm_rootless_env: {}
   tasks:
     - name: Deploy quadlet files
       ansible.builtin.include_role:

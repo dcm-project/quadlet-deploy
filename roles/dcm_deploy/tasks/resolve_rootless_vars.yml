@@ -1,0 +1,106 @@
+---
+# Phase A: Rootless setup (only when dcm_rootless is true)
+
+- name: Configure rootless deployment
+  when: dcm_rootless
+  block:
+    - name: Assert sudo become method for rootless
+      ansible.builtin.assert:
+        that:
+          - ansible_become_method | default('sudo') == 'sudo'
+        fail_msg: "Rootless deployment requires become_method=sudo for nested privilege dropping"
+
+    - name: Check for existing rootful deployment
+      ansible.builtin.find:
+        paths: /etc/containers/systemd
+        patterns: "dcm-*.container"
+      register: _rootful_quadlets
+
+    - name: Fail if rootful quadlets exist
+      ansible.builtin.assert:
+        that:
+          - _rootful_quadlets.files | length == 0
+        fail_msg: >-
+          Existing rootful quadlet files found in /etc/containers/systemd.
+          Rootless and rootful deployments are mutually exclusive on the same host.
+          Remove existing rootful deployment before enabling dcm_rootless.
+      when: _rootful_quadlets.files is defined
+
+    - name: Create DCM service user
+      ansible.builtin.user:
+        name: "{{ dcm_rootless_user }}"
+        system: true
+        create_home: true
+        home: "{{ dcm_rootless_home }}"
+        shell: /sbin/nologin
+        state: present
+      when: dcm_rootless_create_user
+
+    - name: Ensure subordinate UID range for rootless podman
+      ansible.builtin.lineinfile:
+        path: /etc/subuid
+        regexp: "^{{ dcm_rootless_user }}:"
+        line: "{{ dcm_rootless_user }}:231072:65536"
+        create: true
+        mode: "0644"
+
+    - name: Ensure subordinate GID range for rootless podman
+      ansible.builtin.lineinfile:
+        path: /etc/subgid
+        regexp: "^{{ dcm_rootless_user }}:"
+        line: "{{ dcm_rootless_user }}:231072:65536"
+        create: true
+        mode: "0644"
+
+    - name: Set DCM user home directory permissions
+      ansible.builtin.file:
+        path: "{{ dcm_rootless_home }}"
+        state: directory
+        owner: "{{ dcm_rootless_user }}"
+        group: "{{ dcm_rootless_user }}"
+        mode: "0700"
+
+    - name: Enable lingering for DCM user
+      ansible.builtin.command:
+        cmd: loginctl enable-linger {{ dcm_rootless_user }}
+      changed_when: true
+
+    - name: Look up DCM user UID
+      ansible.builtin.getent:
+        database: passwd
+        key: "{{ dcm_rootless_user }}"
+
+    - name: Start user systemd instance
+      ansible.builtin.systemd_service:
+        name: "user@{{ getent_passwd[dcm_rootless_user][1] }}.service"
+        state: started
+
+    - name: Wait for XDG_RUNTIME_DIR to exist
+      ansible.builtin.wait_for:
+        path: "/run/user/{{ getent_passwd[dcm_rootless_user][1] }}"
+        timeout: 30
+
+    - name: Set rootless internal facts
+      ansible.builtin.set_fact:
+        dcm_quadlet_dir: "{{ dcm_rootless_home }}/.config/containers/systemd"
+        dcm_config_dir: "{{ dcm_rootless_home }}/.local/share/dcm/config"
+        _dcm_systemd_scope: user
+        _dcm_wanted_by: default.target
+        _dcm_file_owner: "{{ dcm_rootless_user }}"
+        _dcm_file_group: "{{ dcm_rootless_user }}"
+        _dcm_become_user: "{{ dcm_rootless_user }}"
+        _dcm_rootless_env:
+          XDG_RUNTIME_DIR: "/run/user/{{ getent_passwd[dcm_rootless_user][1] }}"
+          DBUS_SESSION_BUS_ADDRESS: "unix:path=/run/user/{{ getent_passwd[dcm_rootless_user][1] }}/bus"
+
+# Phase B: Rootful defaults (always runs, rootless set_fact above overrides)
+
+- name: Set rootful internal facts
+  ansible.builtin.set_fact:
+    _dcm_systemd_scope: system
+    _dcm_wanted_by: multi-user.target
+    _dcm_file_owner: root
+    _dcm_file_group: root
+    _dcm_become_user: root
+    _dcm_rootless_env: {}
+  when: not dcm_rootless

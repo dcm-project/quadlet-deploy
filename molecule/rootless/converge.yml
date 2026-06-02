@@ -1,0 +1,34 @@
+---
+- name: Converge — render quadlet templates (rootless)
+  hosts: all
+  gather_facts: false
+  vars:
+    dcm_quadlet_dir: /tmp/molecule-dcm-rootless/.config/containers/systemd
+    dcm_config_dir: /tmp/molecule-dcm-rootless/.local/share/dcm/config
+    dcm_kubevirt_kubeconfig: /tmp/molecule-dcm-rootless/kubeconfig-kubevirt
+    dcm_k8s_container_sp_kubeconfig: /tmp/molecule-dcm-rootless/kubeconfig-k8s
+    dcm_acm_cluster_sp_kubeconfig: /tmp/molecule-dcm-rootless/kubeconfig-acm
+    # Rootless-mode internal facts (normally set by resolve_rootless_vars.yml)
+    dcm_rootless: true
+    dcm_rootless_user: "molecule-dcm"
+    dcm_rootless_home: "/tmp/molecule-dcm-rootless"
+    _dcm_systemd_scope: user
+    _dcm_wanted_by: default.target
+    _dcm_file_owner: "{{ omit }}"
+    _dcm_file_group: "{{ omit }}"
+    _dcm_become_user: "{{ lookup('env', 'USER') }}"
+    _dcm_rootless_env: {}
+  pre_tasks:
+    - name: Create rootless directory structure
+      ansible.builtin.file:
+        path: "{{ item }}"
+        state: directory
+        mode: "0755"
+      loop:
+        - "{{ dcm_quadlet_dir }}"
+        - "{{ dcm_config_dir }}"
+  tasks:
+    - name: Deploy quadlet files (rootless)
+      ansible.builtin.include_role:
+        name: dcm_deploy
+        tasks_from: deploy_quadlet_files
