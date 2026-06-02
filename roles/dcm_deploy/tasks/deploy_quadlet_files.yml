@@ -51,6 +51,8 @@
   ansible.builtin.find:
     paths: "{{ dcm_quadlet_dir }}"
     patterns: "dcm-*.container"
+  become: true
+  become_user: "{{ _dcm_become_user }}"
   register: existing_quadlets
 
 - name: Identify stale quadlet files
@@ -62,6 +64,10 @@
     name: "{{ item | replace('.container', '.service') }}"
     state: stopped
     enabled: false
+    scope: "{{ _dcm_systemd_scope }}"
+  become: true
+  become_user: "{{ _dcm_become_user }}"
+  environment: "{{ _dcm_rootless_env }}"
   loop: "{{ dcm_stale_quadlets }}"
   ignore_errors: true
   tags: [systemd]
@@ -70,6 +76,8 @@
   ansible.builtin.file:
     path: "{{ dcm_quadlet_dir }}/{{ item }}"
     state: absent
+  become: true
+  become_user: "{{ _dcm_become_user }}"
   loop: "{{ dcm_stale_quadlets }}"
 
 - name: Deploy DCM network quadlet
@@ -77,12 +85,16 @@
     src: dcm-network.network.j2
     dest: "{{ dcm_quadlet_dir }}/dcm-network.network"
     mode: "0644"
+    owner: "{{ _dcm_file_owner }}"
+    group: "{{ _dcm_file_group }}"
 
 - name: Deploy DCM volume quadlets
   ansible.builtin.template:
     src: "{{ item }}.j2"
     dest: "{{ dcm_quadlet_dir }}/{{ item }}"
     mode: "0644"
+    owner: "{{ _dcm_file_owner }}"
+    group: "{{ _dcm_file_group }}"
   loop:
     - dcm-postgres-data.volume
     - dcm-nats-data.volume
@@ -92,6 +104,8 @@
     src: "{{ item }}.j2"
     dest: "{{ dcm_quadlet_dir }}/{{ item }}"
     mode: "0644"
+    owner: "{{ _dcm_file_owner }}"
+    group: "{{ _dcm_file_group }}"
   loop:
     - dcm-postgres.container
     - dcm-nats.container
@@ -107,6 +121,8 @@
     src: dcm-kubevirt-service-provider.container.j2
     dest: "{{ dcm_quadlet_dir }}/dcm-kubevirt-service-provider.container"
     mode: "0644"
+    owner: "{{ _dcm_file_owner }}"
+    group: "{{ _dcm_file_group }}"
   when: dcm_provider_kubevirt
 
 - name: Deploy K8s container service provider quadlet
@@ -114,6 +130,8 @@
     src: dcm-k8s-container-service-provider.container.j2
     dest: "{{ dcm_quadlet_dir }}/dcm-k8s-container-service-provider.container"
     mode: "0644"
+    owner: "{{ _dcm_file_owner }}"
+    group: "{{ _dcm_file_group }}"
   when: dcm_provider_k8s_container
 
 - name: Deploy ACM cluster service provider quadlet
@@ -121,6 +139,8 @@
     src: dcm-acm-cluster-service-provider.container.j2
     dest: "{{ dcm_quadlet_dir }}/dcm-acm-cluster-service-provider.container"
     mode: "0644"
+    owner: "{{ _dcm_file_owner }}"
+    group: "{{ _dcm_file_group }}"
   when: dcm_provider_acm_cluster
 
 - name: Deploy three-tier demo service provider quadlet
@@ -128,9 +148,15 @@
     src: dcm-three-tier-demo-service-provider.container.j2
     dest: "{{ dcm_quadlet_dir }}/dcm-three-tier-demo-service-provider.container"
     mode: "0644"
+    owner: "{{ _dcm_file_owner }}"
+    group: "{{ _dcm_file_group }}"
   when: dcm_provider_three_tier_demo
 
 - name: Reload systemd daemon
   ansible.builtin.systemd_service:
     daemon_reload: true
+    scope: "{{ _dcm_systemd_scope }}"
+  become: true
+  become_user: "{{ _dcm_become_user }}"
+  environment: "{{ _dcm_rootless_env }}"
   tags: [systemd]

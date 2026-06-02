@@ -1,4 +1,8 @@
 ---
+- name: "Resolve rootless variables"
+  ansible.builtin.include_tasks: "resolve_rootless_vars.yml"
+  tags: [resolve_rootless_vars]
+
 - name: "Ensure prerequisites"
   ansible.builtin.include_tasks: "prerequisites.yml"
   tags: [prerequisites]

@@ -4,9 +4,16 @@
     name: dcm-postgres.service
     state: started
     enabled: true
+    scope: "{{ _dcm_systemd_scope }}"
+  become: true
+  become_user: "{{ _dcm_become_user }}"
+  environment: "{{ _dcm_rootless_env }}"
 
 - name: Check if core databases exist
   ansible.builtin.command: podman exec postgres psql -U {{ dcm_db_user }} -d postgres -tc "SELECT 1 FROM pg_database WHERE datname='{{ item }}'"
+  become: true
+  become_user: "{{ _dcm_become_user }}"
+  environment: "{{ _dcm_rootless_env }}"
   register: db_check
   loop:
     - service-provider
@@ -17,6 +24,9 @@
 
 - name: Create missing core databases
   ansible.builtin.command: podman exec postgres createdb -U {{ dcm_db_user }} {{ item.item }}
+  become: true
+  become_user: "{{ _dcm_become_user }}"
+  environment: "{{ _dcm_rootless_env }}"
   loop: "{{ db_check.results }}"
   when: item.stdout | trim != "1"
   register: db_create
@@ -27,12 +37,18 @@
 
 - name: Check if three-tier-sp database exists
   ansible.builtin.command: podman exec postgres psql -U {{ dcm_db_user }} -d postgres -tc "SELECT 1 FROM pg_database WHERE datname='three-tier-sp'"
+  become: true
+  become_user: "{{ _dcm_become_user }}"
+  environment: "{{ _dcm_rootless_env }}"
   register: three_tier_db_check
   changed_when: false
   when: dcm_provider_three_tier_demo
 
 - name: Create three-tier-sp database
   ansible.builtin.command: podman exec postgres createdb -U {{ dcm_db_user }} three-tier-sp
+  become: true
+  become_user: "{{ _dcm_become_user }}"
+  environment: "{{ _dcm_rootless_env }}"
   when:
     - dcm_provider_three_tier_demo
     - three_tier_db_check.stdout | default('') | trim != "1"

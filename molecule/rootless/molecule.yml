@@ -1,0 +1,19 @@
+---
+driver:
+  name: default
+
+provisioner:
+  name: ansible
+  env:
+    ANSIBLE_SKIP_TAGS: systemd
+    ANSIBLE_ROLES_PATH: ${MOLECULE_PROJECT_DIRECTORY}/roles
+  inventory:
+    hosts:
+      all:
+        hosts:
+          localhost:
+            ansible_host: 127.0.0.1
+            ansible_connection: local
+
+verifier:
+  name: ansible

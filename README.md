@@ -53,15 +53,16 @@ Configuration files (Traefik routes, PostgreSQL init SQL) are sourced from the [
 ## Prerequisites
 
 - RHEL 9 or Fedora target host with Podman 4.4+ (quadlet support)
-- Ansible 2.15+ on the control node
+- Ansible 2.16+ on the control node (rootless mode requires `systemd_service` `scope` parameter)
 - `ansible.posix` collection: `ansible-galaxy collection install ansible.posix`
 - Network access to pull container images from `docker.io` and `quay.io`
 - Dedicated host (container names like `postgres` and `nats` assume no collisions)
 
 ## Deployment Phases
 
-The `dcm_deploy` role executes in six phases:
+The `dcm_deploy` role executes in six phases (seven when `dcm_rootless: true`):
 
+1. **Resolve rootless vars** *(optional, rootless only)* — creates the service user, configures subuid/subgid, enables lingering, starts the user systemd instance, and sets internal facts for user-scoped paths and systemd
 1. **Prerequisites** — installs container tools, firewalld, and git; opens the gateway and UI ports; creates config directories
 2. **Generate configs** — clones the api-gateway repo, copies Traefik config and PostgreSQL init SQL, templates the shared environment file, then cleans up the clone
 3. **Deploy quadlet files** — places `.container`, `.network`, and `.volume` unit files into `/etc/containers/systemd/` and reloads systemd
@@ -224,6 +225,45 @@ Note: three-tier-demo shares `dcm_k8s_container_sp_kubeconfig` — set `dcm_prov
 |----------|---------|-------------|
 | `dcm_firewall_zone` | `public` | Firewalld zone for published ports |
 
+### Rootless Deployment
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `dcm_rootless` | `false` | Enable rootless Podman deployment |
+| `dcm_rootless_user` | `dcm` | User account to run containers as |
+| `dcm_rootless_create_user` | `true` | Whether the role should create the user |
+| `dcm_rootless_home` | `/home/{{ dcm_rootless_user }}` | Home directory path for the rootless user |
+
+## Rootless Deployment
+
+Set `dcm_rootless: true` to run all containers under a dedicated unprivileged user instead of root. This uses user-scoped systemd and rootless Podman — no root privileges are needed at runtime.
+
+```yaml
+dcm_rootless: true
+dcm_rootless_user: dcm          # default
+```
+
+Set `dcm_rootless_create_user: false` if user management is handled externally (LDAP, IPA, etc.). The `ansible.builtin.user` module is idempotent, so you do not need to disable it just because the user already exists locally.
+
+### Path differences
+
+| Resource | Rootful (default) | Rootless |
+|----------|-------------------|----------|
+| Quadlet directory | `/etc/containers/systemd` | `~dcm/.config/containers/systemd` |
+| Config directory | `/srv/containers/dcm/config` | `~dcm/.local/share/dcm/config` |
+| Systemd target | `multi-user.target` | `default.target` |
+| Systemd scope | `system` | `user` |
+
+### Requirements
+
+- `ansible-core >= 2.16` on the control node (required for the `scope` parameter on the `systemd_service` module)
+- `become_method: sudo` configured for the target host (the role uses nested privilege dropping to the rootless user)
+
+### Limitations
+
+- Rootless and rootful deployments are **mutually exclusive** on the same host. Do not enable both.
+- There is **no migration path** from rootful to rootless. Data volumes live in different storage paths per Podman's storage model.
+
 ## Verification
 
 After deployment, verify the stack is healthy:
@@ -241,14 +281,20 @@ curl http://<host>:9080/api/v1alpha1/health/placement
 # DCM UI accessible
 curl http://<host>:7007
 
-# All systemd units active
+# All systemd units active (rootful)
 systemctl status dcm-*.service
+# For rootless, run as the service user:
+#   sudo -u dcm XDG_RUNTIME_DIR=/run/user/$(id -u dcm) systemctl --user status dcm-*.service
 
-# All containers running
+# All containers running (rootful)
 podman ps
+# For rootless:
+#   sudo -u dcm podman ps
 
-# Databases created
+# Databases created (rootful)
 podman exec postgres psql -U admin -l
+# For rootless:
+#   sudo -u dcm podman exec postgres psql -U admin -l
 ```
 
 ## Compose Alignment

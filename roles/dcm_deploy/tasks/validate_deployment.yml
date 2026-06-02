@@ -24,6 +24,9 @@
 
 - name: Get running container names
   ansible.builtin.command: podman ps --format {% raw %}'{{.Names}}'{% endraw %}
+  become: true
+  become_user: "{{ _dcm_become_user }}"
+  environment: "{{ _dcm_rootless_env }}"
   register: running_containers
   changed_when: false
 
@@ -67,15 +70,24 @@
 
 - name: Verify KubeVirt provider health endpoint
   ansible.builtin.command: podman exec kubevirt-service-provider bash -c 'echo > /dev/tcp/localhost/8081'
+  become: true
+  become_user: "{{ _dcm_become_user }}"
+  environment: "{{ _dcm_rootless_env }}"
   changed_when: false
   when: dcm_provider_kubevirt
 
 - name: Verify K8s container provider health endpoint
   ansible.builtin.command: podman exec k8s-container-service-provider bash -c 'echo > /dev/tcp/localhost/8080'
+  become: true
+  become_user: "{{ _dcm_become_user }}"
+  environment: "{{ _dcm_rootless_env }}"
   changed_when: false
   when: dcm_provider_k8s_container
 
 - name: Verify ACM cluster provider health endpoint
   ansible.builtin.command: podman exec acm-cluster-service-provider bash -c 'echo > /dev/tcp/localhost/8080'
+  become: true
+  become_user: "{{ _dcm_become_user }}"
+  environment: "{{ _dcm_rootless_env }}"
   changed_when: false
   when: dcm_provider_acm_cluster
