@@ -118,11 +118,18 @@ ansible-playbook -i inventory/hosts \
 | `dcm_nats_image_tag` | `2-alpine` | NATS tag |
 | `dcm_image_registry` | `quay.io/dcm-project` | Registry for DCM service images |
 
-### Control Plane and UI Versions
+### Control Plane
 
 | Variable | Default | Description |
 |----------|---------|-------------|
-| `dcm_control_plane_version` | `main` | Control-plane image tag |
+| `dcm_control_plane_version` | `main` | Image tag and git clone ref |
+| `dcm_control_plane_repo` | `https://github.com/dcm-project/control-plane.git` | Repo cloned for postgres init SQL |
+| `dcm_control_plane_clone_dir` | `/tmp/dcm-control-plane` | Clone destination on target host |
+
+### DCM UI
+
+| Variable | Default | Description |
+|----------|---------|-------------|
 | `dcm_ui_version` | `main` | DCM UI image tag |
 
 ### Database
@@ -150,13 +157,6 @@ The DCM UI's `APP_BASE_URL` defaults to `http://<ansible_host>:<dcm_ui_port>`. I
 |----------|---------|-------------|
 | `dcm_config_dir` | `/srv/containers/dcm/config` | Configuration files on target host |
 | `dcm_quadlet_dir` | `/etc/containers/systemd` | Quadlet unit file directory |
-
-### Control Plane Source
-
-| Variable | Default | Description |
-|----------|---------|-------------|
-| `dcm_control_plane_repo` | `https://github.com/dcm-project/control-plane.git` | Repo cloned for postgres init SQL |
-| `dcm_control_plane_version` | `main` | Branch/tag to clone |
 
 ### Feature Toggles
 

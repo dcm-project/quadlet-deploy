@@ -4,9 +4,11 @@ dcm_postgres_image: "docker.io/library/postgres"
 dcm_postgres_image_tag: "16-alpine"
 dcm_nats_image: "docker.io/library/nats"
 dcm_nats_image_tag: "2-alpine"
-# Container images — DCM control plane
+# DCM control plane (container image + deploy-time config clone)
 dcm_image_registry: "quay.io/dcm-project"
 dcm_control_plane_version: "main"
+dcm_control_plane_repo: "https://github.com/dcm-project/control-plane.git"
+dcm_control_plane_clone_dir: "/tmp/dcm-control-plane"
 
 # Container images — DCM UI
 dcm_ui_version: "main"
@@ -35,10 +37,6 @@ dcm_nats_monitor_port: 8222
 # Paths on target host
 dcm_config_dir: "/srv/containers/dcm/config"
 dcm_quadlet_dir: "/etc/containers/systemd"
-
-# control-plane repo (cloned at deploy time for postgres init SQL)
-dcm_control_plane_repo: "https://github.com/dcm-project/control-plane.git"
-dcm_control_plane_clone_dir: "/tmp/dcm-control-plane"
 
 # Feature toggles for optional service providers
 dcm_provider_kubevirt: false
