@@ -9,42 +9,20 @@
   become: true
   become_user: "{{ _dcm_become_user }}"
 
-- name: Clone api-gateway repo, copy config files, and clean up
+- name: Clone control-plane repo, copy config files, and clean up
   block:
-    - name: Clone api-gateway repository
+    - name: Clone control-plane repository
       ansible.builtin.git:
-        repo: "{{ dcm_api_gateway_repo }}"
-        version: "{{ dcm_api_gateway_version }}"
-        dest: "{{ dcm_api_gateway_clone_dir }}"
+        repo: "{{ dcm_control_plane_repo }}"
+        version: "{{ dcm_control_plane_version }}"
+        dest: "{{ dcm_control_plane_clone_dir }}"
         force: true
-      become: true
-      become_user: "{{ _dcm_become_user }}"
-
-    - name: Copy Traefik static configuration
-      ansible.builtin.copy:
-        src: "{{ dcm_api_gateway_clone_dir }}/config/traefik.yml"
-        dest: "{{ dcm_config_dir }}/traefik/traefik.yml"
-        owner: "{{ _dcm_file_owner }}"
-        group: "{{ _dcm_file_group }}"
-        mode: "0644"
-        remote_src: true
-      become: true
-      become_user: "{{ _dcm_become_user }}"
-
-    - name: Copy Traefik dynamic routes
-      ansible.builtin.copy:
-        src: "{{ dcm_api_gateway_clone_dir }}/config/dynamic/routes.yml"
-        dest: "{{ dcm_config_dir }}/traefik/dynamic/routes.yml"
-        owner: "{{ _dcm_file_owner }}"
-        group: "{{ _dcm_file_group }}"
-        mode: "0644"
-        remote_src: true
       become: true
       become_user: "{{ _dcm_become_user }}"
 
     - name: Copy PostgreSQL init SQL
       ansible.builtin.copy:
-        src: "{{ dcm_api_gateway_clone_dir }}/hack/postgres-init/01-create-databases.sql"
+        src: "{{ dcm_control_plane_clone_dir }}/deploy/postgres-init/01-create-databases.sql"
         dest: "{{ dcm_config_dir }}/postgres-init/01-create-databases.sql"
         owner: "{{ _dcm_file_owner }}"
         group: "{{ _dcm_file_group }}"
@@ -66,9 +44,9 @@
       become_user: "{{ _dcm_become_user }}"
 
   always:
-    - name: Remove cloned api-gateway repository
+    - name: Remove cloned control-plane repository
       ansible.builtin.file:
-        path: "{{ dcm_api_gateway_clone_dir }}"
+        path: "{{ dcm_control_plane_clone_dir }}"
         state: absent
       become: true
       become_user: "{{ _dcm_become_user }}"

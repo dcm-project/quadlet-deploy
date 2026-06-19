@@ -1,17 +1,19 @@
 [Unit]
-Description=DCM Policy Manager
-After=dcm-postgres.service
-Requires=dcm-postgres.service
+Description=DCM Control Plane
+After=dcm-postgres.service dcm-nats.service
+Requires=dcm-postgres.service dcm-nats.service
 
 [Container]
-Image={{ dcm_image_registry }}/policy-manager:{{ dcm_policy_manager_version }}
-ContainerName=policy-manager
+Image={{ dcm_image_registry }}/control-plane:{{ dcm_control_plane_version }}
+ContainerName=control-plane
 Network=dcm-network.network
 Pull=always
 EnvironmentFile={{ dcm_quadlet_dir }}/dcm.env
 Environment=BIND_ADDRESS=:8080
+Environment=DB_NAME=control-plane
 Environment=LOG_LEVEL=info
-Environment=DB_NAME=policy-manager
+Environment=NATS_URL=nats://nats:4222
+PublishPort={{ dcm_control_plane_port }}:8080
 HealthCmd=bash -c 'echo > /dev/tcp/localhost/8080'
 HealthInterval=2s
 HealthRetries=15

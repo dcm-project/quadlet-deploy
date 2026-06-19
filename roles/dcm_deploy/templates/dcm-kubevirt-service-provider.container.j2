@@ -1,7 +1,7 @@
 [Unit]
 Description=DCM KubeVirt Service Provider
-After=dcm-service-provider-manager.service
-Requires=dcm-service-provider-manager.service
+After=dcm-control-plane.service
+Requires=dcm-control-plane.service
 
 [Container]
 Image={{ dcm_image_registry }}/kubevirt-service-provider:{{ dcm_kubevirt_service_provider_version }}
@@ -9,7 +9,7 @@ ContainerName=kubevirt-service-provider
 Network=dcm-network.network
 Pull=always
 Environment=NATS_URL=nats://nats:4222
-Environment=SERVICE_MANAGER_ENDPOINT=http://service-provider-manager:8080/api/v1alpha1
+Environment=SERVICE_MANAGER_ENDPOINT=http://control-plane:8080/api/v1alpha1
 Environment=PROVIDER_NAME={{ dcm_kubevirt_provider_name }}
 Environment=PROVIDER_ENDPOINT=http://{{ dcm_kubevirt_provider_name }}:8081/api/v1alpha1/vms
 Environment=KUBERNETES_NAMESPACE={{ dcm_kubevirt_namespace }}
