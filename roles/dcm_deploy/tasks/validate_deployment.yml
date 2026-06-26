@@ -1,20 +1,9 @@
 ---
-- name: Verify Traefik health
+- name: Verify control-plane health endpoint
   ansible.builtin.uri:
-    url: "http://localhost:{{ dcm_gateway_port }}/ping"
+    url: "http://localhost:{{ dcm_control_plane_port }}/api/v1alpha1/health"
     method: GET
     status_code: [200]
-
-- name: Verify manager health endpoints
-  ansible.builtin.uri:
-    url: "http://localhost:{{ dcm_gateway_port }}{{ item }}"
-    method: GET
-    status_code: [200]
-  loop:
-    - /api/v1alpha1/health/providers
-    - /api/v1alpha1/health/catalog
-    - /api/v1alpha1/health/policies
-    - /api/v1alpha1/health/placement
 
 - name: Verify DCM UI is accessible
   ansible.builtin.uri:
@@ -37,11 +26,7 @@
   loop:
     - postgres
     - nats
-    - service-provider-manager
-    - catalog-manager
-    - policy-manager
-    - placement-manager
-    - gateway
+    - control-plane
     - dcm-ui
 
 - name: Assert KubeVirt provider is running

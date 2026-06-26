@@ -1,7 +1,7 @@
 [Unit]
 Description=DCM Three-Tier Demo Service Provider
-After=dcm-service-provider-manager.service dcm-nats.service dcm-k8s-container-service-provider.service dcm-postgres.service
-Requires=dcm-service-provider-manager.service dcm-nats.service dcm-k8s-container-service-provider.service dcm-postgres.service
+After=dcm-control-plane.service dcm-nats.service dcm-k8s-container-service-provider.service dcm-postgres.service
+Requires=dcm-control-plane.service dcm-nats.service dcm-k8s-container-service-provider.service dcm-postgres.service
 
 [Container]
 Image={{ dcm_image_registry }}/three-tier-app-demo-service-provider:{{ dcm_three_tier_demo_service_provider_version }}
@@ -13,7 +13,7 @@ Environment=DB_NAME=three-tier-sp
 Environment=CONTAINER_SP_URL=http://k8s-container-service-provider:8080
 Environment=SP_NAME={{ dcm_three_tier_demo_sp_name }}
 Environment=SP_ENDPOINT=http://three-tier-demo-service-provider:8080
-Environment=DCM_REGISTRATION_URL=http://service-provider-manager:8080/api/v1alpha1
+Environment=DCM_REGISTRATION_URL=http://control-plane:8080/api/v1alpha1
 Environment=SP_NATS_URL=nats://nats:4222
 Environment=SP_K8S_NAMESPACE={{ dcm_three_tier_demo_sp_namespace }}
 Environment=SP_K8S_KUBECONFIG=/kubeconfig

@@ -38,9 +38,7 @@
     dcm_expected_quadlets: >-
       {{
         ['dcm-postgres.container', 'dcm-nats.container',
-         'dcm-service-provider-manager.container', 'dcm-catalog-manager.container',
-         'dcm-policy-manager.container', 'dcm-placement-manager.container',
-         'dcm-gateway.container', 'dcm-ui.container'] +
+         'dcm-control-plane.container', 'dcm-ui.container'] +
         (['dcm-kubevirt-service-provider.container'] if dcm_provider_kubevirt else []) +
         (['dcm-k8s-container-service-provider.container'] if dcm_provider_k8s_container else []) +
         (['dcm-acm-cluster-service-provider.container'] if dcm_provider_acm_cluster else []) +
@@ -109,11 +107,7 @@
   loop:
     - dcm-postgres.container
     - dcm-nats.container
-    - dcm-service-provider-manager.container
-    - dcm-catalog-manager.container
-    - dcm-policy-manager.container
-    - dcm-placement-manager.container
-    - dcm-gateway.container
+    - dcm-control-plane.container
     - dcm-ui.container
 
 - name: Deploy KubeVirt service provider quadlet

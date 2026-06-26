@@ -12,9 +12,10 @@
   gather_facts: false
 
   vars:
-    api_gateway_repo: "https://github.com/dcm-project/api-gateway.git"
-    api_gateway_version: "main"
-    clone_dest: "/tmp/dcm-api-gateway-alignment-check"
+    control_plane_repo: "https://github.com/dcm-project/control-plane.git"
+    control_plane_version: "main"
+    clone_dest: "/tmp/dcm-control-plane-alignment-check"
+    compose_path: "{{ clone_dest }}/deploy/compose.yaml"
     template_dir: "{{ playbook_dir }}/roles/dcm_deploy/templates"
 
     # Core services (non-profile) that must have quadlet templates.
@@ -22,11 +23,7 @@
     expected_core_services:
       - postgres
       - nats
-      - gateway
-      - service-provider-manager
-      - catalog-manager
-      - policy-manager
-      - placement-manager
+      - control-plane
       - ui  # compose service 'dcm-ui' — its name already contains the dcm- prefix
     # Optional services (behind compose profiles) — templates exist but are
     # conditionally deployed
@@ -44,11 +41,7 @@
     service_to_template:
       postgres: dcm-postgres.container.j2
       nats: dcm-nats.container.j2
-      gateway: dcm-gateway.container.j2
-      service-provider-manager: dcm-service-provider-manager.container.j2
-      catalog-manager: dcm-catalog-manager.container.j2
-      policy-manager: dcm-policy-manager.container.j2
-      placement-manager: dcm-placement-manager.container.j2
+      control-plane: dcm-control-plane.container.j2
       ui: dcm-ui.container.j2
       kubevirt-service-provider: dcm-kubevirt-service-provider.container.j2
       k8s-container-service-provider: dcm-k8s-container-service-provider.container.j2
@@ -68,6 +61,9 @@
         - POSTGRES_DB
         - POSTGRES_USER
         - POSTGRES_PASSWORD
+      # Quadlet uses ansible_host for browser access; compose uses localhost
+      ui:
+        - APP_BASE_URL
 
     # Infrastructure images use fully-variable names in templates (e.g.,
     # {{ dcm_postgres_image }}) so we can't string-parse the image name.
@@ -75,16 +71,15 @@
     infra_image_mapping:
       postgres: dcm_postgres_image
       nats: dcm_nats_image
-      traefik: dcm_traefik_image
 
   tasks:
     - name: Clone, verify, and clean up
       block:
         # -- Phase 1: Clone and parse ----------------------------------------
-        - name: Clone api-gateway repository
+        - name: Clone control-plane repository
           ansible.builtin.git:
-            repo: "{{ api_gateway_repo }}"
-            version: "{{ api_gateway_version }}"
+            repo: "{{ control_plane_repo }}"
+            version: "{{ control_plane_version }}"
             dest: "{{ clone_dest }}"
             single_branch: true
             depth: 1
@@ -92,7 +87,7 @@
 
         - name: Read compose.yaml
           ansible.builtin.slurp:
-            src: "{{ clone_dest }}/compose.yaml"
+            src: "{{ compose_path }}"
           register: compose_raw
 
         - name: Parse full compose data

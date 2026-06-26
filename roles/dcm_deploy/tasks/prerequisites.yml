@@ -20,9 +20,9 @@
     state: started
     enabled: true
 
-- name: Open DCM gateway port in firewall
+- name: Open DCM control-plane port in firewall
   ansible.posix.firewalld:
-    port: "{{ dcm_gateway_port }}/tcp"
+    port: "{{ dcm_control_plane_port }}/tcp"
     zone: "{{ dcm_firewall_zone }}"
     permanent: true
     state: enabled
@@ -56,5 +56,4 @@
     group: "{{ _dcm_file_group }}"
     mode: "0755"
   loop:
-    - "{{ dcm_config_dir }}/traefik/dynamic"
     - "{{ dcm_config_dir }}/postgres-init"

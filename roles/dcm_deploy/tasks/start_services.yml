@@ -15,46 +15,26 @@
     port: "{{ dcm_nats_port }}"
     timeout: 60
 
-- name: Start DCM manager services
+- name: Start DCM control-plane service
   ansible.builtin.systemd_service:
-    name: "{{ item }}"
+    name: dcm-control-plane.service
     state: started
     enabled: true
     scope: "{{ _dcm_systemd_scope }}"
   become: true
   become_user: "{{ _dcm_become_user }}"
   environment: "{{ _dcm_rootless_env }}"
-  loop:
-    - dcm-service-provider-manager.service
-    - dcm-catalog-manager.service
-    - dcm-policy-manager.service
-    - dcm-placement-manager.service
 
-- name: Wait for manager containers to be healthy
-  ansible.builtin.command: podman inspect --format {% raw %}'{{.State.Health.Status}}'{% endraw %} {{ item }}
+- name: Wait for control-plane container to be healthy
+  ansible.builtin.command: podman inspect --format {% raw %}'{{.State.Health.Status}}'{% endraw %} control-plane
   become: true
   become_user: "{{ _dcm_become_user }}"
   environment: "{{ _dcm_rootless_env }}"
-  register: manager_health
-  until: manager_health.stdout | trim == "healthy"
+  register: control_plane_health
+  until: control_plane_health.stdout | trim == "healthy"
   retries: 30
   delay: 2
   changed_when: false
-  loop:
-    - service-provider-manager
-    - catalog-manager
-    - policy-manager
-    - placement-manager
-
-- name: Start DCM gateway service
-  ansible.builtin.systemd_service:
-    name: dcm-gateway.service
-    state: started
-    enabled: true
-    scope: "{{ _dcm_systemd_scope }}"
-  become: true
-  become_user: "{{ _dcm_become_user }}"
-  environment: "{{ _dcm_rootless_env }}"
 
 - name: Start DCM UI service
   ansible.builtin.systemd_service:

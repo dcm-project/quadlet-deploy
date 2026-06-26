@@ -16,10 +16,7 @@
   environment: "{{ _dcm_rootless_env }}"
   register: db_check
   loop:
-    - service-provider
-    - policy-manager
-    - catalog-manager
-    - placement-manager
+    - control-plane
   changed_when: false
 
 - name: Create missing core databases

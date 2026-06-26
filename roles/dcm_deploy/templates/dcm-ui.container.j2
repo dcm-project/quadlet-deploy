@@ -1,7 +1,7 @@
 [Unit]
 Description=DCM Web UI
-After=dcm-gateway.service
-Requires=dcm-gateway.service
+After=dcm-control-plane.service
+Requires=dcm-control-plane.service
 
 [Container]
 Image={{ dcm_image_registry }}/dcm-ui:{{ dcm_ui_version }}
@@ -9,7 +9,7 @@ ContainerName=dcm-ui
 Network=dcm-network.network
 Pull=always
 Environment=APP_BASE_URL=http://{{ ansible_host }}:{{ dcm_ui_port }}
-Environment=DCM_API_GATEWAY_URL=http://gateway:9080
+Environment=DCM_API_GATEWAY_URL=http://control-plane:8080
 PublishPort={{ dcm_ui_port }}:7007
 
 [Service]
