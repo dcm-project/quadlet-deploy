@@ -9,7 +9,7 @@ ContainerName=dcm-ui
 Network=dcm-network.network
 Pull=always
 Environment=APP_BASE_URL=http://{{ ansible_host }}:{{ dcm_ui_port }}
-Environment=DCM_API_GATEWAY_URL=http://control-plane:8080
+Environment=DCM_API_URL=http://control-plane:8080
 PublishPort={{ dcm_ui_port }}:7007
 
 [Service]
